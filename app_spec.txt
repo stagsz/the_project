@@ -1,0 +1,1202 @@
+<project_specification>
+  <project_name>FedLearn Industrial - Federated Learning Platform for Industrial IoT & Automation</project_name>
+
+  <overview>
+    Build a comprehensive federated learning management platform for industrial IoT environments. The application
+    enables distributed machine learning across edge devices without centralizing sensitive operational data.
+    It leverages Claude API for intelligent model analysis, anomaly explanation, and natural language queries
+    about system performance. Features include device fleet management, training orchestration, model versioning,
+    predictive maintenance, quality inspection analytics, and real-time monitoring dashboards. The UI should be
+    clean, modern, and operations-focused using Tailwind CSS with excellent data visualization and responsive design.
+    
+    **Use the frontend-design plugin throughout development for component generation, responsive layouts, 
+    and design system consistency.**
+    
+    **IMPORTANT: No emojis should be used anywhere in the application. Use icon libraries (Lucide, Heroicons)
+    for all visual indicators instead.**
+    
+    **INDUSTRIAL FOCUS: The application is configured for industrial operations with:**
+    - Default units: SI units (meters, kilograms, seconds, Celsius)
+    - Time format: 24-hour format (HH:mm:ss)
+    - Date format: ISO 8601 (YYYY-MM-DD)
+    - Number format: Engineering notation where appropriate (1.23e6)
+    - Timezone: UTC with local timezone display option
+    - Language: English (en-US) with i18n support structure
+  </overview>
+
+  <technology_stack>
+    <api_key>
+        You can use an API key located at /tmp/api-key for testing. You will not be allowed to read this file, but you can reference it in code.
+    </api_key>
+    <claude_plugins>
+      <frontend_design>
+        Leverage the frontend-design plugin for:
+        - UI component generation with proper structure
+        - Responsive layout implementation
+        - Accessibility features (ARIA labels, keyboard navigation)
+        - Dark mode implementation
+        - Design system consistency
+        - Form components with validation UI
+      </frontend_design>
+    </claude_plugins>
+    <frontend>
+      <framework>React with Vite</framework>
+      <styling>Tailwind CSS (via CDN) - use frontend-design plugin for class organization</styling>
+      <icons>Lucide React or Heroicons (NO emojis anywhere in the app)</icons>
+      <state_management>React hooks and context</state_management>
+      <routing>React Router for navigation</routing>
+      <charts>Recharts for metrics visualization, with real-time updates</charts>
+      <date_handling>date-fns for date manipulation with UTC support</date_handling>
+      <port>Only launch on port {frontend_port}</port>
+    </frontend>
+    <backend>
+      <runtime>Node.js with Express</runtime>
+      <database>SQLite with better-sqlite3</database>
+      <api_integration>Claude API for AI-powered insights and anomaly analysis</api_integration>
+      <realtime>WebSocket for live device metrics and training progress</realtime>
+      <file_processing>Multer for model uploads, csv-parser for data imports</file_processing>
+    </backend>
+    <communication>
+      <api>RESTful endpoints</api>
+      <streaming>WebSocket for real-time device telemetry and training updates</streaming>
+      <edge_protocol>MQTT simulation for edge device communication (mocked for demo)</edge_protocol>
+      <claude_api>Integration with Claude API using Anthropic SDK</claude_api>
+    </communication>
+    <federated_learning>
+      <privacy>Differential privacy with configurable epsilon (default: 1.0)</privacy>
+      <aggregation>Federated averaging (FedAvg) algorithm simulation</aggregation>
+      <model_format>JSON-serialized model weights for demo purposes</model_format>
+      <simulation>Built-in edge device simulator for development and testing</simulation>
+    </federated_learning>
+  </technology_stack>
+
+  <prerequisites>
+    <environment_setup>
+      - Repository includes .env with VITE_ANTHROPIC_API_KEY configured
+      - Frontend dependencies pre-installed via pnpm
+      - Backend code goes in /server directory
+      - Install backend dependencies as needed
+      - Frontend-design plugin is installed and ready to use
+      - Edge device simulator included for development without real hardware
+    </environment_setup>
+  </prerequisites>
+
+  <core_features>
+    <dashboard>
+      - Fleet health overview with device status summary (online/offline/warning/error)
+      - Global model performance metrics (accuracy, loss, convergence rate)
+      - Active training rounds indicator with progress
+      - Recent anomalies and alerts widget
+      - Device geographic distribution map (facility/zone view)
+      - Training participation rate by device group
+      - Model version deployment status
+      - Resource utilization charts (CPU, memory, bandwidth)
+      - AI-generated operational insights summary
+      - Quick action buttons (start training, deploy model, acknowledge alerts)
+    </dashboard>
+
+    <device_fleet_management>
+      - Register and configure edge devices
+      - Device grouping by facility, zone, equipment type
+      - Real-time device status monitoring (heartbeat, connectivity)
+      - Device capability profiles (compute power, memory, sensors)
+      - Firmware version tracking
+      - Device health metrics (temperature, uptime, error rates)
+      - Bulk device operations (update, restart, configure)
+      - Device authentication and security certificates
+      - Offline device detection and alerts
+      - Device decommissioning and archival
+      - Simulated devices for development/testing
+    </device_fleet_management>
+
+    <model_management>
+      - Create and configure ML model definitions
+      - Model architecture specification (layers, parameters)
+      - Model versioning with semantic versioning (major.minor.patch)
+      - Version comparison and diff visualization
+      - Model deployment to device groups
+      - Rollback to previous versions
+      - Model performance benchmarks
+      - A/B testing between model versions
+      - Model export and import (JSON format)
+      - Model lifecycle states (draft, training, deployed, deprecated)
+      - AI-powered model performance analysis
+    </model_management>
+
+    <training_orchestration>
+      - Configure federated training rounds
+      - Device selection strategies (random, performance-based, availability)
+      - Training hyperparameter management (learning rate, batch size, epochs)
+      - Privacy budget configuration (differential privacy epsilon)
+      - Training schedule (immediate, scheduled, recurring)
+      - Real-time training progress monitoring
+      - Round-by-round metrics visualization
+      - Training pause/resume/cancel controls
+      - Automatic convergence detection
+      - Failed round recovery and retry logic
+      - Training history and audit log
+    </training_orchestration>
+
+    <aggregation_engine>
+      - Federated averaging (FedAvg) implementation
+      - Weighted aggregation based on data volume
+      - Secure aggregation simulation
+      - Outlier detection in model updates
+      - Gradient clipping configuration
+      - Aggregation validation checks
+      - Performance metrics post-aggregation
+      - Aggregation history and versioning
+    </aggregation_engine>
+
+    <predictive_maintenance>
+      - Equipment failure prediction models
+      - Sensor data pattern analysis
+      - Maintenance scheduling recommendations
+      - Component lifespan tracking
+      - Historical failure data analysis
+      - AI-generated maintenance insights
+      - Work order integration simulation
+      - Cost-benefit analysis for maintenance actions
+      - Equipment health scoring (0-100 scale)
+      - Vibration, temperature, pressure anomaly detection
+      - Maintenance event logging and tracking
+    </predictive_maintenance>
+
+    <quality_inspection>
+      - Visual inspection model management
+      - Defect detection metrics (precision, recall, F1)
+      - Defect classification categories
+      - Inspection result logging
+      - Quality trend analysis over time
+      - Cross-facility quality comparison
+      - Rare defect collaborative learning
+      - False positive/negative tracking
+      - Human override and correction feedback
+      - Quality control threshold configuration
+      - Inspection image archive (simulated)
+    </quality_inspection>
+
+    <anomaly_detection>
+      - Real-time sensor anomaly detection
+      - Anomaly severity classification (info, warning, critical)
+      - Anomaly pattern recognition
+      - Root cause analysis with AI assistance
+      - Anomaly correlation across devices
+      - Historical anomaly browsing and search
+      - Anomaly acknowledgment workflow
+      - Escalation rules configuration
+      - False alarm management
+      - Anomaly impact assessment
+    </anomaly_detection>
+
+    <data_privacy_governance>
+      - Differential privacy configuration per model
+      - Privacy budget tracking and alerts
+      - Data never leaves edge devices (core principle)
+      - Audit logs for all data access
+      - Consent management for data usage
+      - Data retention policies
+      - Anonymization verification
+      - Compliance reporting (GDPR-style)
+      - Privacy impact assessments
+      - Secure communication verification
+    </data_privacy_governance>
+
+    <reports_analytics>
+      - Training performance over time (line charts)
+      - Device participation heatmaps
+      - Model accuracy comparison (bar charts)
+      - Anomaly frequency analysis
+      - Maintenance cost projections
+      - Quality metrics dashboards
+      - Resource utilization reports
+      - Privacy budget consumption
+      - Custom date range reports
+      - Export reports as PDF
+      - Scheduled report generation
+    </reports_analytics>
+
+    <ai_insights>
+      - Natural language queries about system status
+      - AI-generated training recommendations
+      - Anomaly explanation and context
+      - Performance optimization suggestions
+      - Predictive analytics summaries
+      - Model improvement recommendations
+      - Conversational interface for operations queries
+      - Insight history and bookmarking
+    </ai_insights>
+
+    <notifications_alerts>
+      - Training completion notifications
+      - Device offline alerts
+      - Anomaly detection alerts (severity-based)
+      - Model deployment notifications
+      - Privacy budget threshold warnings
+      - Equipment failure predictions
+      - Quality threshold violations
+      - System health warnings
+      - Configurable alert channels (in-app, email mock)
+      - Alert acknowledgment and resolution tracking
+      - Alert escalation rules
+    </notifications_alerts>
+
+    <settings_preferences>
+      - Theme selection (Light, Dark, Auto)
+      - Default units configuration (SI/Imperial)
+      - Time format (24-hour default, 12-hour option)
+      - Date format preferences (ISO 8601 default)
+      - Timezone configuration (UTC default with local display)
+      - Default device group selection
+      - Privacy defaults (epsilon, noise multiplier)
+      - Notification preferences
+      - Dashboard layout customization
+      - API rate limiting configuration
+      - Session timeout settings
+    </settings_preferences>
+
+    <accessibility>
+      - Full keyboard navigation
+      - Screen reader support with ARIA labels
+      - High contrast mode for industrial environments
+      - Focus management
+      - Reduced motion support
+      - Font size adjustment
+      - Color blind friendly status indicators
+    </accessibility>
+
+    <responsive_design>
+      - Desktop-first layout (control room optimized)
+      - Tablet support for field technicians
+      - Mobile view for alerts and quick status
+      - Touch-optimized controls where applicable
+      - Collapsible sidebar navigation
+      - Full-screen dashboard mode
+      - Progressive Web App (PWA) support
+    </responsive_design>
+  </core_features>
+
+  <database_schema>
+    <tables>
+      <users>
+        - id (PRIMARY KEY)
+        - email
+        - name
+        - role (admin, operator, viewer)
+        - avatar_url
+        - created_at
+        - last_login
+        - preferences (JSON: theme, units, timezone, date_format, time_format)
+        - notification_settings (JSON)
+      </users>
+
+      <facilities>
+        - id (PRIMARY KEY)
+        - name
+        - location
+        - timezone
+        - description
+        - is_active
+        - created_at
+        - updated_at
+      </facilities>
+
+      <device_groups>
+        - id (PRIMARY KEY)
+        - facility_id (FOREIGN KEY)
+        - name
+        - description
+        - equipment_type (sensor, controller, gateway, compute_node)
+        - zone
+        - created_at
+        - updated_at
+      </device_groups>
+
+      <devices>
+        - id (PRIMARY KEY)
+        - device_group_id (FOREIGN KEY)
+        - device_uid (unique hardware identifier)
+        - name
+        - type (edge_compute, sensor_gateway, plc, camera)
+        - status (online, offline, warning, error, maintenance)
+        - ip_address
+        - firmware_version
+        - capabilities (JSON: compute_power, memory_gb, sensors, protocols)
+        - last_heartbeat
+        - is_simulated (boolean)
+        - is_active
+        - registered_at
+        - updated_at
+      </devices>
+
+      <device_metrics>
+        - id (PRIMARY KEY)
+        - device_id (FOREIGN KEY)
+        - timestamp
+        - cpu_usage (percentage)
+        - memory_usage (percentage)
+        - temperature_celsius
+        - network_latency_ms
+        - error_count
+        - sensor_readings (JSON)
+        - created_at
+      </device_metrics>
+
+      <models>
+        - id (PRIMARY KEY)
+        - name
+        - description
+        - model_type (classification, regression, anomaly_detection, object_detection)
+        - architecture (JSON: layers, parameters)
+        - input_schema (JSON)
+        - output_schema (JSON)
+        - target_use_case (predictive_maintenance, quality_inspection, process_optimization)
+        - status (draft, active, deprecated)
+        - created_by (FOREIGN KEY to users)
+        - created_at
+        - updated_at
+      </models>
+
+      <model_versions>
+        - id (PRIMARY KEY)
+        - model_id (FOREIGN KEY)
+        - version (semver string: major.minor.patch)
+        - weights (JSON: serialized model weights)
+        - metrics (JSON: accuracy, loss, f1_score, etc.)
+        - training_round_id (FOREIGN KEY, nullable)
+        - is_deployed
+        - deployment_count
+        - created_at
+        - notes
+      </model_versions>
+
+      <training_rounds>
+        - id (PRIMARY KEY)
+        - model_id (FOREIGN KEY)
+        - status (pending, in_progress, aggregating, completed, failed, cancelled)
+        - round_number
+        - target_devices (JSON: device_ids or group selection criteria)
+        - participating_devices (JSON: actual device_ids that participated)
+        - hyperparameters (JSON: learning_rate, batch_size, local_epochs)
+        - privacy_config (JSON: epsilon, delta, noise_multiplier)
+        - started_at
+        - completed_at
+        - aggregation_method (fedavg, weighted_fedavg)
+        - result_metrics (JSON)
+        - error_message
+        - created_by (FOREIGN KEY to users)
+        - created_at
+      </training_rounds>
+
+      <device_training_contributions>
+        - id (PRIMARY KEY)
+        - training_round_id (FOREIGN KEY)
+        - device_id (FOREIGN KEY)
+        - status (pending, training, uploading, completed, failed)
+        - local_metrics (JSON: loss, accuracy, samples_trained)
+        - data_samples_count
+        - training_duration_seconds
+        - upload_timestamp
+        - error_message
+        - created_at
+      </device_training_contributions>
+
+      <anomalies>
+        - id (PRIMARY KEY)
+        - device_id (FOREIGN KEY)
+        - model_version_id (FOREIGN KEY, nullable)
+        - anomaly_type (sensor_drift, equipment_failure, quality_defect, process_deviation)
+        - severity (info, warning, critical)
+        - detected_at
+        - sensor_data (JSON: readings at detection time)
+        - confidence_score (0.0 to 1.0)
+        - description
+        - ai_explanation
+        - status (new, acknowledged, investigating, resolved, false_alarm)
+        - resolved_at
+        - resolved_by (FOREIGN KEY to users, nullable)
+        - resolution_notes
+        - created_at
+      </anomalies>
+
+      <maintenance_predictions>
+        - id (PRIMARY KEY)
+        - device_id (FOREIGN KEY)
+        - model_version_id (FOREIGN KEY)
+        - component
+        - prediction_type (failure, degradation, replacement_needed)
+        - predicted_date
+        - confidence_score
+        - risk_level (low, medium, high, critical)
+        - recommended_action
+        - estimated_cost
+        - status (pending, scheduled, completed, dismissed)
+        - created_at
+        - updated_at
+      </maintenance_predictions>
+
+      <quality_inspections>
+        - id (PRIMARY KEY)
+        - device_id (FOREIGN KEY)
+        - model_version_id (FOREIGN KEY)
+        - inspection_timestamp
+        - result (pass, fail, warning)
+        - defect_type (nullable)
+        - confidence_score
+        - image_reference (nullable, simulated path)
+        - human_override (boolean)
+        - override_result (nullable)
+        - override_by (FOREIGN KEY to users, nullable)
+        - notes
+        - created_at
+      </quality_inspections>
+
+      <model_deployments>
+        - id (PRIMARY KEY)
+        - model_version_id (FOREIGN KEY)
+        - device_group_id (FOREIGN KEY, nullable for all devices)
+        - deployment_type (full, canary, a_b_test)
+        - status (pending, rolling_out, deployed, rolling_back, failed)
+        - target_device_count
+        - successful_device_count
+        - failed_device_count
+        - started_at
+        - completed_at
+        - rollback_version_id (FOREIGN KEY to model_versions, nullable)
+        - deployed_by (FOREIGN KEY to users)
+        - created_at
+      </model_deployments>
+
+      <notifications>
+        - id (PRIMARY KEY)
+        - user_id (FOREIGN KEY)
+        - type (training_complete, device_offline, anomaly_detected, deployment_status, maintenance_alert)
+        - title
+        - message
+        - severity (info, warning, error)
+        - data (JSON: related entity IDs and context)
+        - is_read
+        - created_at
+      </notifications>
+
+      <audit_logs>
+        - id (PRIMARY KEY)
+        - user_id (FOREIGN KEY, nullable for system actions)
+        - action (create, update, delete, deploy, start_training, acknowledge_anomaly)
+        - entity_type (model, device, training_round, anomaly, etc.)
+        - entity_id
+        - old_values (JSON, nullable)
+        - new_values (JSON, nullable)
+        - ip_address
+        - timestamp
+      </audit_logs>
+
+      <privacy_budget_logs>
+        - id (PRIMARY KEY)
+        - model_id (FOREIGN KEY)
+        - training_round_id (FOREIGN KEY)
+        - epsilon_consumed
+        - cumulative_epsilon
+        - budget_limit
+        - timestamp
+      </privacy_budget_logs>
+    </tables>
+  </database_schema>
+
+  <api_endpoints>
+    <authentication>
+      POST /api/auth/register - Create new user
+      POST /api/auth/login - User login
+      POST /api/auth/logout - User logout
+      GET /api/auth/me - Get current user
+      PUT /api/auth/profile - Update profile
+    </authentication>
+
+    <facilities>
+      GET /api/facilities - List all facilities
+      POST /api/facilities - Create facility
+      GET /api/facilities/:id - Get facility details
+      PUT /api/facilities/:id - Update facility
+      DELETE /api/facilities/:id - Deactivate facility
+    </facilities>
+
+    <devices>
+      GET /api/devices - List devices (with filters: group, status, facility)
+      POST /api/devices - Register device
+      GET /api/devices/:id - Get device details
+      PUT /api/devices/:id - Update device
+      DELETE /api/devices/:id - Decommission device
+      POST /api/devices/:id/heartbeat - Device heartbeat (for simulation)
+      GET /api/devices/:id/metrics - Get device metrics history
+      POST /api/devices/bulk - Bulk device operations
+      GET /api/device-groups - List device groups
+      POST /api/device-groups - Create device group
+      PUT /api/device-groups/:id - Update device group
+    </devices>
+
+    <models>
+      GET /api/models - List models
+      POST /api/models - Create model definition
+      GET /api/models/:id - Get model details
+      PUT /api/models/:id - Update model
+      DELETE /api/models/:id - Deprecate model
+      GET /api/models/:id/versions - List model versions
+      GET /api/models/:id/versions/:versionId - Get specific version
+      POST /api/models/:id/versions - Create new version (from aggregation)
+      POST /api/models/:id/deploy - Deploy model version
+      POST /api/models/:id/rollback - Rollback to previous version
+    </models>
+
+    <training>
+      GET /api/training/rounds - List training rounds (with filters)
+      POST /api/training/rounds - Start new training round
+      GET /api/training/rounds/:id - Get training round details
+      PUT /api/training/rounds/:id - Update training round (pause/resume)
+      DELETE /api/training/rounds/:id - Cancel training round
+      GET /api/training/rounds/:id/contributions - Get device contributions
+      POST /api/training/rounds/:id/aggregate - Trigger aggregation
+      GET /api/training/rounds/:id/metrics - Get round metrics over time
+    </training>
+
+    <simulation>
+      POST /api/simulation/devices - Create simulated devices
+      POST /api/simulation/metrics - Generate simulated metrics
+      POST /api/simulation/training - Simulate training contribution
+      POST /api/simulation/anomaly - Inject simulated anomaly
+      DELETE /api/simulation/reset - Reset all simulated data
+    </simulation>
+
+    <anomalies>
+      GET /api/anomalies - List anomalies (with filters)
+      GET /api/anomalies/:id - Get anomaly details
+      PUT /api/anomalies/:id - Update anomaly status
+      POST /api/anomalies/:id/acknowledge - Acknowledge anomaly
+      POST /api/anomalies/:id/resolve - Resolve anomaly
+    </anomalies>
+
+    <maintenance>
+      GET /api/maintenance/predictions - List maintenance predictions
+      GET /api/maintenance/predictions/:id - Get prediction details
+      PUT /api/maintenance/predictions/:id - Update prediction status
+      POST /api/maintenance/schedule - Schedule maintenance
+      GET /api/maintenance/history - Get maintenance history
+    </maintenance>
+
+    <quality>
+      GET /api/quality/inspections - List quality inspections
+      GET /api/quality/inspections/:id - Get inspection details
+      POST /api/quality/inspections/:id/override - Human override result
+      GET /api/quality/metrics - Get quality metrics summary
+      GET /api/quality/trends - Get quality trends over time
+    </quality>
+
+    <ai>
+      POST /api/ai/query - Natural language query about system
+      GET /api/ai/insights - Get AI-generated insights
+      POST /api/ai/explain-anomaly - Get AI explanation for anomaly
+      GET /api/ai/recommendations - Get optimization recommendations
+      POST /api/ai/analyze-training - Analyze training performance
+    </ai>
+
+    <reports>
+      GET /api/reports/training-performance - Training metrics over time
+      GET /api/reports/device-participation - Device participation rates
+      GET /api/reports/model-comparison - Compare model versions
+      GET /api/reports/anomaly-frequency - Anomaly frequency analysis
+      GET /api/reports/maintenance-costs - Maintenance cost projections
+      GET /api/reports/quality-summary - Quality metrics summary
+      GET /api/reports/privacy-budget - Privacy budget consumption
+      GET /api/reports/export - Export report as PDF
+    </reports>
+
+    <notifications>
+      GET /api/notifications - List notifications
+      PUT /api/notifications/:id/read - Mark as read
+      PUT /api/notifications/read-all - Mark all as read
+      DELETE /api/notifications/:id - Delete notification
+    </notifications>
+
+    <audit>
+      GET /api/audit/logs - Get audit logs (with filters)
+      GET /api/audit/logs/:id - Get audit log details
+    </audit>
+
+    <websocket>
+      WS /ws/devices - Real-time device status updates
+      WS /ws/training/:roundId - Real-time training progress
+      WS /ws/metrics/:deviceId - Real-time device metrics stream
+      WS /ws/anomalies - Real-time anomaly notifications
+    </websocket>
+  </api_endpoints>
+
+  <design_system>
+    <icon_guidelines>
+      **CRITICAL: NO EMOJIS ALLOWED IN THIS APPLICATION**
+      - Use Lucide React or Heroicons for ALL icons
+      - Device icons: Server, Cpu, Radio, Camera, Gauge, Thermometer
+      - Status icons: CheckCircle, AlertTriangle, XCircle, Clock, Wifi, WifiOff
+      - Action icons: Play, Pause, Stop, RotateCcw, Upload, Download, Settings
+      - Model icons: Brain, GitBranch, Layers, Target, TrendingUp
+      - Navigation icons: LayoutDashboard, Box, Activity, Shield, BarChart3
+      - Facility icons: Building, Factory, MapPin, Warehouse
+    </icon_guidelines>
+    
+    <plugin_usage>
+      **IMPORTANT: Use the frontend-design plugin to generate all UI components following this design system.**
+      The plugin should be consulted for:
+      - Component structure and semantic HTML
+      - Tailwind CSS class organization and patterns
+      - Responsive breakpoint implementation
+      - Accessibility attributes (ARIA labels, roles, keyboard handlers)
+      - Dark mode class variants
+      - Animation and transition patterns
+      - Form validation UI patterns
+    </plugin_usage>
+    
+    <color_palette>
+      <status_colors>
+        - Online/Healthy: Emerald-500 (#10B981), Emerald-600 (#059669)
+        - Offline/Error: Rose-500 (#F43F5E), Rose-600 (#E11D48)
+        - Warning: Amber-500 (#F59E0B), Amber-600 (#D97706)
+        - Info/Neutral: Blue-500 (#3B82F6), Blue-600 (#2563EB)
+        - Maintenance: Slate-500 (#64748B), Slate-600 (#475569)
+      </status_colors>
+      <light_mode>
+        - Background: White (#FFFFFF), Gray-50 (#F9FAFB)
+        - Surface: White (#FFFFFF)
+        - Border: Gray-200 (#E5E7EB)
+        - Text Primary: Gray-900 (#111827)
+        - Text Secondary: Gray-600 (#4B5563)
+        - Text Muted: Gray-400 (#9CA3AF)
+      </light_mode>
+      <dark_mode>
+        - Background: Gray-950 (#030712), Gray-900 (#111827)
+        - Surface: Gray-800 (#1F2937)
+        - Border: Gray-700 (#374151)
+        - Text Primary: Gray-100 (#F3F4F6)
+        - Text Secondary: Gray-400 (#9CA3AF)
+        - Text Muted: Gray-500 (#6B7280)
+      </dark_mode>
+      <model_type_colors>
+        - Classification: Violet-500 (#8B5CF6)
+        - Regression: Sky-500 (#0EA5E9)
+        - Anomaly Detection: Orange-500 (#F97316)
+        - Object Detection: Pink-500 (#EC4899)
+      </model_type_colors>
+      <severity_colors>
+        - Critical: Rose-600 (#E11D48)
+        - Warning: Amber-500 (#F59E0B)
+        - Info: Blue-400 (#60A5FA)
+      </severity_colors>
+    </color_palette>
+
+    <typography>
+      - Font Family: Inter, system-ui, sans-serif
+      - Monospace: JetBrains Mono (for metrics, IDs, code)
+      - Headings: font-semibold, tracking-tight
+      - Body: font-normal, text-base
+      - Metrics Display: font-mono, tabular-nums
+      - Small Text: text-sm, text-gray-600
+      <industrial_formatting>
+        - Numbers: Engineering notation for large values (e.g., 1.23M, 456K)
+        - Percentages: One decimal place (e.g., 94.5%)
+        - Timestamps: ISO 8601 format (2025-12-09T14:30:00Z)
+        - Durations: Human-readable (e.g., "2h 34m", "45s")
+        - Temperatures: Celsius with unit (e.g., "45.2°C")
+        - Data sizes: SI units (KB, MB, GB)
+      </industrial_formatting>
+    </typography>
+
+    <components>
+      <device_card>
+        - Device Lucide icon (NO EMOJIS) based on type
+        - Device name and UID (truncated)
+        - Status indicator (colored dot + text)
+        - Last heartbeat timestamp
+        - Key metrics preview (CPU, memory, temp)
+        - Quick action buttons (configure, view, restart)
+        **USE PLUGIN: Generate with proper accessibility and real-time update support**
+      </device_card>
+
+      <model_card>
+        - Model type Lucide icon (NO EMOJIS)
+        - Model name and version badge
+        - Status pill (draft/active/deprecated)
+        - Performance metrics summary
+        - Deployment count indicator
+        - Last trained timestamp
+        **USE PLUGIN: Generate with card patterns and hover states**
+      </model_card>
+
+      <training_progress>
+        - Round number and model name
+        - Progress bar with percentage
+        - Participating devices count (e.g., "12/20 devices")
+        - Current phase indicator (training/aggregating/complete)
+        - Elapsed time and ETA
+        - Real-time metrics chart (loss curve)
+        **USE PLUGIN: Generate with animation patterns and ARIA progress attributes**
+      </training_progress>
+
+      <anomaly_row>
+        - Severity icon with color (NO EMOJIS)
+        - Anomaly type and device name
+        - Detection timestamp
+        - Confidence score badge
+        - Status pill (new/acknowledged/resolved)
+        - Quick action buttons (acknowledge, investigate)
+        **USE PLUGIN: Generate with proper accessibility and responsive behavior**
+      </anomaly_row>
+
+      <metrics_chart>
+        - Line chart for time-series data
+        - Real-time update capability
+        - Zoom and pan controls
+        - Tooltip with precise values
+        - Multiple series support
+        - Threshold line overlay
+        **USE PLUGIN: Generate containers with responsive behavior**
+      </metrics_chart>
+
+      <status_indicator>
+        - Colored dot (green/amber/red/gray)
+        - Pulsing animation for critical states
+        - Text label with status
+        - Tooltip with last update time
+        **USE PLUGIN: Generate with accessible color alternatives**
+      </status_indicator>
+
+      <device_selector>
+        - Grouped by facility and zone
+        - Search/filter devices
+        - Multi-select with checkboxes
+        - Status indicators inline
+        - Select all/none/by group buttons
+        **USE PLUGIN: Generate with combobox pattern and keyboard navigation**
+      </device_selector>
+
+      <hyperparameter_form>
+        - Learning rate input with scientific notation
+        - Batch size dropdown
+        - Local epochs slider
+        - Privacy epsilon input with range validation
+        - Preset configurations (conservative, balanced, aggressive)
+        **USE PLUGIN: Generate with proper form validation patterns**
+      </hyperparameter_form>
+
+      <charts>
+        - Line chart: Training loss/accuracy over rounds
+        - Bar chart: Device participation by group
+        - Pie chart: Anomaly distribution by type
+        - Gauge chart: Model confidence scores
+        - Heatmap: Device activity over time
+        **USE PLUGIN: Generate containers with proper responsive behavior**
+      </charts>
+
+      <buttons>
+        - Primary: Emerald background for positive actions (Start, Deploy)
+        - Danger: Rose background for destructive actions (Stop, Delete)
+        - Warning: Amber background for caution actions (Pause, Rollback)
+        - Secondary: Border style with hover fill
+        - Ghost: Text only with hover background
+        **USE PLUGIN: Generate with consistent styling and focus states**
+      </buttons>
+
+      <cards>
+        - Rounded corners (12px)
+        - Subtle shadow on light, border on dark
+        - Padding: p-4 to p-6
+        - Header with title and actions
+        - Hover state: slight lift
+        **USE PLUGIN: Generate with dark mode variants**
+      </cards>
+
+      <modals>
+        - Centered overlay with backdrop
+        - Focus trap for accessibility
+        - Escape key to close
+        - Slide-up animation on mobile
+        - Scale animation on desktop
+        - Confirmation dialogs for destructive actions
+        **USE PLUGIN: Generate with dialog pattern and focus management**
+      </modals>
+
+      <forms>
+        - Consistent label positioning
+        - Error states with messages
+        - Loading states for submit
+        - Field validation indicators
+        - Required field markers
+        - Inline help text for technical fields
+        **USE PLUGIN: Generate with proper form validation patterns**
+      </forms>
+
+      <tables>
+        - Sortable columns
+        - Pagination controls
+        - Row selection with checkboxes
+        - Expandable row details
+        - Column visibility toggle
+        - Export to CSV button
+        **USE PLUGIN: Generate with accessible table patterns**
+      </tables>
+    </components>
+
+    <animations>
+      - Smooth transitions (150-300ms)
+      - Real-time metric updates (fade in new values)
+      - Progress bar fill animation
+      - Pulsing status indicators for critical alerts
+      - Slide in for modals and panels
+      - Fade for notifications
+      - Skeleton loaders for data
+      - Spinning loader for async operations
+      **USE PLUGIN: Implement following motion preference guidelines**
+    </animations>
+  </design_system>
+
+  <key_interactions>
+    <start_training_flow>
+      1. Navigate to Models section
+      2. Select model to train
+      3. Click "Start Training Round"
+      4. Configure hyperparameters (or use preset)
+      5. Select target devices or device groups
+      6. Set privacy parameters (epsilon)
+      7. Review configuration summary
+      8. Click "Start" - training round created
+      9. Real-time progress dashboard opens
+      10. Devices train locally, progress updates via WebSocket
+      11. Aggregation triggers automatically when threshold reached
+      12. New model version created on success
+    </start_training_flow>
+
+    <deploy_model_flow>
+      1. Navigate to model versions
+      2. Select version to deploy
+      3. Choose deployment strategy (full/canary/A-B)
+      4. Select target device groups
+      5. Review deployment impact
+      6. Confirm deployment
+      7. Monitor rollout progress
+      8. View deployment status per device
+    </deploy_model_flow>
+
+    <anomaly_investigation_flow>
+      1. Receive anomaly alert notification
+      2. Click notification to view anomaly details
+      3. See sensor data at detection time
+      4. Click "Get AI Explanation"
+      5. AI provides context and possible causes
+      6. Mark anomaly as "Investigating"
+      7. View historical patterns for device
+      8. Take action or mark as false alarm
+      9. Add resolution notes
+      10. Anomaly marked resolved
+    </anomaly_investigation_flow>
+
+    <device_registration_flow>
+      1. Click "Register Device" button
+      2. Enter device details (UID, name, type)
+      3. Select facility and device group
+      4. Configure device capabilities
+      5. Generate authentication credentials
+      6. Device appears in fleet with "offline" status
+      7. When device connects, status changes to "online"
+      8. Initial metrics start streaming
+    </device_registration_flow>
+
+    <natural_language_query_flow>
+      1. Click search bar or use command palette
+      2. Type natural language query
+      3. Examples: "What devices are offline?", "Show training performance last week"
+      4. AI interprets and executes query
+      5. Results displayed with visualization or table
+      6. User can refine or save query
+    </natural_language_query_flow>
+
+    <dashboard_interaction>
+      1. Overview cards show fleet health summary
+      2. Click card to drill down to device list
+      3. Training status shows active rounds
+      4. Click training round for progress details
+      5. Anomaly feed shows recent detections
+      6. Click anomaly for investigation
+      7. Model performance widget with trends
+      8. Quick actions for common tasks
+    </dashboard_interaction>
+  </key_interactions>
+
+  <implementation_steps>
+    <plugin_integration>
+      **Throughout all implementation steps, actively use the frontend-design plugin to:**
+      - Generate component boilerplate with proper structure
+      - Implement responsive layouts following desktop-first approach (control room optimized)
+      - Add accessibility features automatically
+      - Create consistent design patterns
+      - Implement dark mode variants efficiently
+      - Generate form validation UI
+    </plugin_integration>
+
+    <step number="1">
+      <title>Setup Project Foundation and Database</title>
+      <tasks>
+        - Initialize Express server with SQLite database
+        - Set up Claude API client for AI insights
+        - Create database schema with all tables
+        - Implement user authentication endpoints with role-based access
+        - Set up CORS, middleware, and error handling
+        - Create seed data with sample facilities, device groups
+        - Configure WebSocket server for real-time updates
+        - Set up date-fns with UTC timezone handling
+        - Initialize default user preferences (units, timezone, format)
+        - Create simulation mode toggle and infrastructure
+      </tasks>
+    </step>
+
+    <step number="2">
+      <title>Build Device Fleet Management</title>
+      <tasks>
+        - Create device CRUD endpoints
+        - **USE PLUGIN: Build device list with status indicators and filtering**
+        - **USE PLUGIN: Implement device card component with real-time status**
+        - **USE PLUGIN: Add device registration form with validation**
+        - Create device group management endpoints
+        - **USE PLUGIN: Build device group tree view component**
+        - Implement device heartbeat and status tracking
+        - Create simulated device generator for testing
+        - **USE PLUGIN: Build device details panel with metrics charts**
+      </tasks>
+    </step>
+
+    <step number="3">
+      <title>Model Management System</title>
+      <tasks>
+        - Create model CRUD endpoints
+        - **USE PLUGIN: Build model list with type icons and status badges**
+        - **USE PLUGIN: Implement model creation form with architecture config**
+        - Create model versioning system with semver
+        - **USE PLUGIN: Build version history timeline component**
+        - Implement version comparison view
+        - **USE PLUGIN: Create model performance metrics dashboard**
+        - Build model export/import functionality
+      </tasks>
+    </step>
+
+    <step number="4">
+      <title>Training Orchestration</title>
+      <tasks>
+        - Create training round management endpoints
+        - **USE PLUGIN: Build training configuration wizard**
+        - **USE PLUGIN: Implement device selector with multi-select**
+        - **USE PLUGIN: Create hyperparameter form with presets**
+        - Build WebSocket handlers for training progress
+        - **USE PLUGIN: Create real-time training progress dashboard**
+        - Implement federated averaging aggregation logic
+        - Create differential privacy simulation
+        - **USE PLUGIN: Build training history table with filters**
+        - Implement training pause/resume/cancel logic
+      </tasks>
+    </step>
+
+    <step number="5">
+      <title>Simulation Engine</title>
+      <tasks>
+        - Build device simulator for realistic metrics
+        - Create training simulation (local training mock)
+        - Implement synthetic sensor data generation
+        - Build anomaly injection system for testing
+        - Create simulation control panel
+        - **USE PLUGIN: Build simulation status indicators**
+        - Implement configurable simulation parameters
+        - Create batch device simulation
+      </tasks>
+    </step>
+
+    <step number="6">
+      <title>Dashboard and Visualizations</title>
+      <tasks>
+        - **USE PLUGIN: Build responsive dashboard layout with grid system**
+        - **USE PLUGIN: Create fleet health overview cards**
+        - **USE PLUGIN: Implement real-time charts with WebSocket updates**
+        - Build training status widget with progress
+        - **USE PLUGIN: Create anomaly feed widget with severity indicators**
+        - **USE PLUGIN: Build model performance comparison charts**
+        - **USE PLUGIN: Add facility/zone navigation component**
+        - Implement dashboard customization (widget arrangement)
+      </tasks>
+    </step>
+
+    <step number="7">
+      <title>Anomaly Detection and Management</title>
+      <tasks>
+        - Create anomaly detection simulation
+        - Build anomaly CRUD endpoints
+        - **USE PLUGIN: Create anomaly list with severity filtering**
+        - **USE PLUGIN: Build anomaly detail view with sensor data**
+        - Implement anomaly acknowledgment workflow
+        - **USE PLUGIN: Create resolution form with notes**
+        - Build anomaly correlation analysis
+        - Create Claude API integration for anomaly explanation
+        - **USE PLUGIN: Build AI explanation panel component**
+      </tasks>
+    </step>
+
+    <step number="8">
+      <title>Predictive Maintenance</title>
+      <tasks>
+        - Create maintenance prediction endpoints
+        - Build prediction model simulation
+        - **USE PLUGIN: Create maintenance prediction cards**
+        - **USE PLUGIN: Implement maintenance timeline view**
+        - Build maintenance scheduling system
+        - **USE PLUGIN: Create cost projection charts**
+        - Implement risk level indicators
+        - Build maintenance history tracking
+      </tasks>
+    </step>
+
+    <step number="9">
+      <title>Quality Inspection System</title>
+      <tasks>
+        - Create quality inspection endpoints
+        - Build inspection result simulation
+        - **USE PLUGIN: Create inspection results table**
+        - **USE PLUGIN: Build defect category management**
+        - Implement human override workflow
+        - **USE PLUGIN: Create quality trend charts**
+        - Build cross-facility comparison views
+        - Implement quality threshold configuration
+      </tasks>
+    </step>
+
+    <step number="10">
+      <title>AI Insights and Natural Language</title>
+      <tasks>
+        - Build Claude API integration for insights
+        - Implement natural language query parsing
+        - **USE PLUGIN: Create AI chat interface component**
+        - Build recommendation engine
+        - **USE PLUGIN: Create insights dashboard widget**
+        - Implement query history and bookmarking
+        - Build training analysis with AI
+      </tasks>
+    </step>
+
+    <step number="11">
+      <title>Reports and Analytics</title>
+      <tasks>
+        - Create comprehensive reports endpoints
+        - **USE PLUGIN: Build training performance reports**
+        - **USE PLUGIN: Implement device participation heatmaps**
+        - Build privacy budget consumption tracking
+        - **USE PLUGIN: Create custom date range picker for reports**
+        - Build PDF export functionality
+        - **USE PLUGIN: Add scheduled report configuration**
+      </tasks>
+    </step>
+
+    <step number="12">
+      <title>Notifications and Audit</title>
+      <tasks>
+        - Build notification system with severity levels
+        - **USE PLUGIN: Implement alert toast notifications**
+        - **USE PLUGIN: Create notification center panel**
+        - Build audit logging system
+        - **USE PLUGIN: Create audit log viewer with filters**
+        - Implement notification preferences
+        - Build escalation rules engine
+        - Create email notification hooks (mock)
+      </tasks>
+    </step>
+
+    <step number="13">
+      <title>Model Deployment System</title>
+      <tasks>
+        - Create deployment management endpoints
+        - Build deployment strategies (full, canary, A/B)
+        - **USE PLUGIN: Create deployment wizard**
+        - Implement rollout progress tracking
+        - **USE PLUGIN: Build deployment status dashboard**
+        - Create rollback functionality
+        - Build deployment history view
+        - Implement deployment impact analysis
+      </tasks>
+    </step>
+
+    <step number="14">
+      <title>Polish and Optimization</title>
+      <tasks>
+        - **USE PLUGIN: Optimize responsive layouts for control room displays**
+        - **USE PLUGIN: Add keyboard shortcuts with accessibility guidance**
+        - **USE PLUGIN: Implement dark mode using theme switching patterns**
+        - **USE PLUGIN: Add comprehensive accessibility features (ARIA, focus management)**
+        - Performance optimization for real-time updates
+        - **USE PLUGIN: Create onboarding flow with simulation setup**
+        - **USE PLUGIN: Add settings forms with proper validation**
+        - Verify all components use Lucide icons only (NO EMOJIS anywhere)
+        - Test all industrial formatting: timestamps, metrics, durations
+        - Load testing with simulated device fleet
+      </tasks>
+    </step>
+  </implementation_steps>
+
+  <success_criteria>
+    <functionality>
+      - Federated training simulation completes successfully
+      - Device fleet management handles 100+ simulated devices
+      - Real-time WebSocket updates with <500ms latency
+      - Model versioning and deployment workflow complete
+      - Anomaly detection and investigation workflow functional
+      - AI insights provide relevant recommendations
+      - Privacy budget tracking accurate
+    </functionality>
+
+    <user_experience>
+      - Dashboard loads in under 2 seconds
+      - Training round configuration in under 60 seconds
+      - Real-time updates feel instant
+      - Intuitive navigation for operations staff
+      - Clear status indicators at a glance
+      - Mobile-friendly alert management
+      - Simulation mode enables demo without real devices
+    </user_experience>
+
+    <technical_quality>
+      - Clean, maintainable code structure
+      - Proper error handling throughout
+      - Secure API key management
+      - Optimized database queries with indexes
+      - Efficient WebSocket message handling
+      - Data validation on all inputs
+      - Comprehensive audit logging
+    </technical_quality>
+
+    <design_polish>
+      - Consistent industrial/operations visual design **generated via plugin**
+      - Clear status color coding (green/amber/red)
+      - Beautiful real-time charts and visualizations
+      - Smooth animations and transitions **following plugin patterns**
+      - Excellent contrast for control room visibility **validated by plugin**
+      - Dark mode fully implemented **using plugin theme system**
+    </design_polish>
+
+    <ai_features>
+      - Accurate anomaly explanations from Claude
+      - Helpful training recommendations
+      - Natural language queries work intuitively
+      - Relevant optimization suggestions
+      - Context-aware insights
+      - Appropriate confidence indicators
+    </ai_features>
+
+    <federated_learning>
+      - Training rounds complete with simulated devices
+      - Aggregation produces improved model versions
+      - Privacy budget properly tracked and enforced
+      - Device selection strategies work correctly
+      - Failed device handling works gracefully
+      - Model deployment reaches target devices
+    </federated_learning>
+  </success_criteria>
+</project_specification>
