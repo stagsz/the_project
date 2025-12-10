@@ -41,7 +41,8 @@ You can start with simulated data if you don't have physical devices connected y
 
 **Option 2: Simulated Devices (Testing/Development)**
 - Create virtual devices for testing and development
-- Upload CSV/JSON datasets to simulate device data
+- Upload CSV/JSON/Parquet datasets to simulate device data
+- Datasets are stored securely in the server's datasets/ directory
 - Perfect for prototyping before deploying to real hardware
 
 **Option 3: Hybrid**
@@ -50,9 +51,10 @@ You can start with simulated data if you don't have physical devices connected y
 
 To upload a dataset for testing:
 1. Go to **Devices** → **Add Device**
-2. Select "Simulated Device" as device type
-3. Upload your dataset (CSV, JSON, or Parquet)
-4. The system will treat it as a federated client`
+2. Select "Simulated Device (Dataset Upload)" as device type
+3. Upload your dataset (CSV, JSON, or Parquet - max 100MB)
+4. Click "Create Device" - the dataset will be uploaded to /datasets/
+5. The system will treat it as a federated client with local data`
   },
   {
     id: 'model-types',
@@ -152,16 +154,24 @@ To upload a dataset for testing:
     id: 'data-format',
     question: 'What data format should I use for uploads?',
     answer: `**Supported Formats:**
-- CSV (recommended for tabular data)
-- JSON (for structured/nested data)
-- Parquet (for large datasets)
+- **CSV** (recommended for tabular data) - .csv extension
+- **JSON** (for structured/nested data) - .json extension
+- **Parquet** (for large datasets) - .parquet extension
 
-**CSV Requirements:**
-\`\`\`
+**Maximum File Size:** 100MB per upload
+
+**Upload Location:** Files are stored in the server/datasets/ directory with unique filenames
+
+**CSV Format Example:**
 timestamp,sensor_1,sensor_2,label
 2024-01-01 00:00:00,23.5,45.2,normal
 2024-01-01 00:01:00,24.1,46.0,normal
-\`\`\`
+
+**JSON Format Example:**
+[
+  {"timestamp": "2024-01-01 00:00:00", "sensor_1": 23.5, "label": "normal"},
+  {"timestamp": "2024-01-01 00:01:00", "sensor_1": 24.1, "label": "normal"}
+]
 
 **Required Columns (varies by use case):**
 - **Timestamp**: ISO 8601 format
@@ -171,7 +181,8 @@ timestamp,sensor_1,sensor_2,label
 **Tips:**
 - Use consistent column names
 - Handle missing values before upload
-- Normalize numeric features for best results`
+- Normalize numeric features for best results
+- Preview your data before uploading`
   },
   {
     id: 'privacy-compliance',
@@ -210,13 +221,14 @@ const workflows = [
     icon: Zap,
     steps: [
       'Go to Devices → Add Device',
-      'Select "Simulated Device"',
-      'Upload a sample CSV or use demo data',
+      'Select "Simulated Device (Dataset Upload)"',
+      'Upload your dataset (CSV, JSON, or Parquet)',
+      'Preview the data and click "Create Device"',
       'Go to Models → Create Model',
       'Choose model type matching your data',
       'Go to Training → Start Training',
       'Select your model and simulated device',
-      'Monitor training progress'
+      'Monitor training progress in real-time'
     ]
   },
   {
