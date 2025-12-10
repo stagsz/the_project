@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
-import { Server, Plus, Search, Filter, AlertCircle } from 'lucide-react'
+import { Server, Plus, Search, Filter, AlertCircle, Upload, Database, FileSpreadsheet, CheckCircle2, X } from 'lucide-react'
 import Modal from '../components/Modal'
 
 const statusColors = {
@@ -23,7 +23,8 @@ const deviceTypes = [
   { value: 'edge_compute', label: 'Edge Compute' },
   { value: 'sensor_gateway', label: 'Sensor Gateway' },
   { value: 'plc', label: 'PLC' },
-  { value: 'camera', label: 'Camera' }
+  { value: 'camera', label: 'Camera' },
+  { value: 'simulated', label: 'Simulated Device (Dataset Upload)' }
 ]
 
 export default function Devices() {
@@ -42,6 +43,10 @@ export default function Devices() {
   })
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
+  const [uploadedFile, setUploadedFile] = useState(null)
+  const [uploadProgress, setUploadProgress] = useState(0)
+  const [datasetPreview, setDatasetPreview] = useState(null)
+  const fileInputRef = useRef(null)
 
   useEffect(() => {
     fetchDevices()
@@ -71,10 +76,64 @@ export default function Devices() {
   }
 
   function generateUID() {
-    const prefix = deviceTypes.find(t => t.value === newDevice.type)?.value.substring(0, 2).toUpperCase() || 'DV'
+    const prefix = newDevice.type === 'simulated' ? 'SIM' : deviceTypes.find(t => t.value === newDevice.type)?.value.substring(0, 2).toUpperCase() || 'DV'
     const timestamp = Date.now().toString(36).toUpperCase()
     const random = Math.random().toString(36).substring(2, 6).toUpperCase()
     return `${prefix}-${timestamp}-${random}`
+  }
+
+  function handleFileSelect(e) {
+    const file = e.target.files[0]
+    if (!file) return
+
+    const validTypes = ['text/csv', 'application/json', 'application/vnd.apache.parquet']
+    const validExtensions = ['.csv', '.json', '.parquet']
+    const fileExtension = file.name.substring(file.name.lastIndexOf('.')).toLowerCase()
+
+    if (!validExtensions.includes(fileExtension)) {
+      setError('Please upload a CSV, JSON, or Parquet file')
+      return
+    }
+
+    setUploadedFile(file)
+    setError('')
+
+    // Preview CSV files
+    if (fileExtension === '.csv') {
+      const reader = new FileReader()
+      reader.onload = (event) => {
+        const text = event.target.result
+        const lines = text.split('\n').slice(0, 6) // Header + 5 rows
+        const headers = lines[0].split(',').map(h => h.trim())
+        const rows = lines.slice(1).map(line => line.split(',').map(c => c.trim()))
+        setDatasetPreview({ headers, rows, totalRows: text.split('\n').length - 1 })
+      }
+      reader.readAsText(file)
+    } else if (fileExtension === '.json') {
+      const reader = new FileReader()
+      reader.onload = (event) => {
+        try {
+          const data = JSON.parse(event.target.result)
+          const records = Array.isArray(data) ? data : data.data || data.records || [data]
+          const headers = Object.keys(records[0] || {})
+          const rows = records.slice(0, 5).map(r => headers.map(h => String(r[h] || '')))
+          setDatasetPreview({ headers, rows, totalRows: records.length })
+        } catch {
+          setDatasetPreview(null)
+        }
+      }
+      reader.readAsText(file)
+    } else {
+      setDatasetPreview({ headers: ['Parquet file'], rows: [], totalRows: 'Unknown' })
+    }
+  }
+
+  function clearUploadedFile() {
+    setUploadedFile(null)
+    setDatasetPreview(null)
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
   }
 
   async function handleCreateDevice(e) {
@@ -83,21 +142,44 @@ export default function Devices() {
     setSubmitting(true)
 
     try {
+      // For simulated devices, require a dataset file
+      if (newDevice.type === 'simulated' && !uploadedFile) {
+        throw new Error('Please upload a dataset file for the simulated device')
+      }
+
       const deviceData = {
         ...newDevice,
         device_uid: newDevice.device_uid || generateUID(),
-        device_group_id: newDevice.device_group_id || null
+        device_group_id: newDevice.device_group_id || null,
+        is_simulated: newDevice.type === 'simulated'
       }
 
-      const res = await fetch('/api/devices', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(deviceData)
-      })
+      // If simulated device with file, use FormData
+      if (newDevice.type === 'simulated' && uploadedFile) {
+        const formData = new FormData()
+        formData.append('dataset', uploadedFile)
+        formData.append('device', JSON.stringify(deviceData))
 
-      if (!res.ok) {
-        const data = await res.json()
-        throw new Error(data.error?.message || 'Failed to create device')
+        const res = await fetch('/api/devices/simulated', {
+          method: 'POST',
+          body: formData
+        })
+
+        if (!res.ok) {
+          const data = await res.json()
+          throw new Error(data.error?.message || 'Failed to create simulated device')
+        }
+      } else {
+        const res = await fetch('/api/devices', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(deviceData)
+        })
+
+        if (!res.ok) {
+          const data = await res.json()
+          throw new Error(data.error?.message || 'Failed to create device')
+        }
       }
 
       setShowAddModal(false)
@@ -109,6 +191,7 @@ export default function Devices() {
         ip_address: '',
         firmware_version: '1.0.0'
       })
+      clearUploadedFile()
       fetchDevices()
     } catch (err) {
       setError(err.message)
@@ -270,7 +353,12 @@ export default function Devices() {
             <select
               id="type"
               value={newDevice.type}
-              onChange={(e) => setNewDevice({ ...newDevice, type: e.target.value })}
+              onChange={(e) => {
+                setNewDevice({ ...newDevice, type: e.target.value })
+                if (e.target.value !== 'simulated') {
+                  clearUploadedFile()
+                }
+              }}
               className="input"
               required
             >
@@ -281,6 +369,108 @@ export default function Devices() {
               ))}
             </select>
           </div>
+
+          {/* Dataset Upload Section - Only for Simulated Devices */}
+          {newDevice.type === 'simulated' && (
+            <div className="space-y-3">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                Dataset File *
+              </label>
+
+              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+                <div className="flex items-start gap-2">
+                  <Database className="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
+                  <div className="text-sm text-blue-700 dark:text-blue-300">
+                    <p className="font-medium">Upload your training data</p>
+                    <p className="text-blue-600 dark:text-blue-400">Supported formats: CSV, JSON, Parquet</p>
+                  </div>
+                </div>
+              </div>
+
+              {!uploadedFile ? (
+                <div
+                  onClick={() => fileInputRef.current?.click()}
+                  className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-6 text-center cursor-pointer hover:border-blue-500 dark:hover:border-blue-400 transition-colors"
+                >
+                  <Upload className="w-8 h-8 mx-auto text-gray-400 mb-2" />
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    Click to upload or drag and drop
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">CSV, JSON, or Parquet (max 100MB)</p>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".csv,.json,.parquet"
+                    onChange={handleFileSelect}
+                    className="hidden"
+                  />
+                </div>
+              ) : (
+                <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-emerald-100 dark:bg-emerald-900/50 rounded-lg flex items-center justify-center">
+                        <FileSpreadsheet className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+                      </div>
+                      <div>
+                        <p className="font-medium text-gray-900 dark:text-white text-sm">{uploadedFile.name}</p>
+                        <p className="text-xs text-gray-500">
+                          {(uploadedFile.size / 1024).toFixed(1)} KB
+                          {datasetPreview && ` • ${datasetPreview.totalRows} rows`}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={clearUploadedFile}
+                      className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                    >
+                      <X className="w-4 h-4 text-gray-500" />
+                    </button>
+                  </div>
+
+                  {/* Data Preview */}
+                  {datasetPreview && datasetPreview.headers.length > 0 && (
+                    <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
+                      <p className="text-xs font-medium text-gray-500 mb-2">Preview</p>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="bg-gray-50 dark:bg-gray-800">
+                              {datasetPreview.headers.slice(0, 5).map((header, i) => (
+                                <th key={i} className="px-2 py-1 text-left font-medium text-gray-600 dark:text-gray-400 truncate max-w-[100px]">
+                                  {header}
+                                </th>
+                              ))}
+                              {datasetPreview.headers.length > 5 && (
+                                <th className="px-2 py-1 text-gray-400">+{datasetPreview.headers.length - 5} more</th>
+                              )}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {datasetPreview.rows.slice(0, 3).map((row, i) => (
+                              <tr key={i} className="border-t border-gray-100 dark:border-gray-700">
+                                {row.slice(0, 5).map((cell, j) => (
+                                  <td key={j} className="px-2 py-1 text-gray-700 dark:text-gray-300 truncate max-w-[100px]">
+                                    {cell}
+                                  </td>
+                                ))}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-2 mt-3 text-emerald-600 dark:text-emerald-400">
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span className="text-sm">File ready for upload</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           <div>
             <label htmlFor="device_group_id" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">

@@ -13,6 +13,7 @@ import {
   BarChart3,
   Sparkles,
   Settings,
+  HelpCircle,
   Menu,
   X,
   LogOut,
@@ -32,6 +33,7 @@ const navigation = [
   { name: 'Reports', href: '/reports', icon: BarChart3 },
   { name: 'AI Insights', href: '/ai-insights', icon: Sparkles },
   { name: 'Settings', href: '/settings', icon: Settings },
+  { name: 'Help', href: '/help', icon: HelpCircle },
 ]
 
 export default function Layout() {

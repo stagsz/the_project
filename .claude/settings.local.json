@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__MCP_DOCKER__hub_repo_details",
+      "mcp__MCP_DOCKER__dataset_search"
+    ]
+  }
+}

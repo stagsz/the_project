@@ -15,6 +15,7 @@ import Quality from './pages/Quality'
 import Reports from './pages/Reports'
 import Settings from './pages/Settings'
 import AIInsights from './pages/AIInsights'
+import Help from './pages/Help'
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth()
@@ -59,6 +60,7 @@ function App() {
         <Route path="reports" element={<Reports />} />
         <Route path="ai-insights" element={<AIInsights />} />
         <Route path="settings" element={<Settings />} />
+        <Route path="help" element={<Help />} />
       </Route>
     </Routes>
   )
