@@ -1,4 +1,7 @@
-import { createContext, useContext, useState, useEffect } from 'react'
+const fs = require('fs');
+
+// Revert to relative URLs which will use Vite's proxy
+const content = `import { createContext, useContext, useState, useEffect } from 'react'
 
 const AuthContext = createContext(null)
 
@@ -19,7 +22,7 @@ export function AuthProvider({ children }) {
     try {
       const response = await fetch('/api/auth/me', {
         headers: {
-          'Authorization': `Bearer ${token}`
+          'Authorization': \`Bearer \${token}\`
         }
       })
 
@@ -64,7 +67,7 @@ export function AuthProvider({ children }) {
       await fetch('/api/auth/logout', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`
+          'Authorization': \`Bearer \${token}\`
         }
       })
     } catch (error) {
@@ -81,7 +84,7 @@ export function AuthProvider({ children }) {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
+        'Authorization': \`Bearer \${token}\`
       },
       body: JSON.stringify(updates)
     })
@@ -119,3 +122,7 @@ export function useAuth() {
   }
   return context
 }
+`;
+
+fs.writeFileSync('./client/src/context/AuthContext.jsx', content);
+console.log('AuthContext.jsx reverted to use relative URLs (for Vite proxy)');

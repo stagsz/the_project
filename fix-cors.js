@@ -1,4 +1,6 @@
-import express from 'express';
+const fs = require('fs');
+
+const content = `import express from 'express';
 import cors from 'cors';
 import { WebSocketServer } from 'ws';
 import { createServer } from 'http';
@@ -36,7 +38,7 @@ app.use(cors({
     // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
     // Allow all localhost origins for development
-    if (origin.match(/^http:\/\/localhost:\d+$/)) {
+    if (origin.match(/^http:\\/\\/localhost:\\d+$/)) {
       return callback(null, true);
     }
     // Also allow specific CORS_ORIGIN if set
@@ -105,10 +107,14 @@ server.listen(PORT, () => {
   console.log('========================================');
   console.log('FedLearn Industrial Server');
   console.log('========================================');
-  console.log(`Server running on port ${PORT}`);
-  console.log(`API: http://localhost:${PORT}/api`);
-  console.log(`WebSocket: ws://localhost:${PORT}/ws`);
+  console.log(\`Server running on port \${PORT}\`);
+  console.log(\`API: http://localhost:\${PORT}/api\`);
+  console.log(\`WebSocket: ws://localhost:\${PORT}/ws\`);
   console.log('========================================');
 });
 
 export { app, server, wss };
+`;
+
+fs.writeFileSync('./server/src/index.js', content);
+console.log('Server index.js updated with flexible CORS');

@@ -62,7 +62,7 @@ router.post('/login', (req, res) => {
     }
 
     // Update last login
-    db.prepare('UPDATE users SET last_login = datetime("now") WHERE id = ?').run(user.id);
+    db.prepare("UPDATE users SET last_login = datetime('now') WHERE id = ?").run(user.id);
 
     // Simple token (in production, use JWT)
     const token = Buffer.from(`${user.id}:${Date.now()}`).toString('base64');

@@ -1,4 +1,7 @@
-import { createContext, useContext, useState, useEffect } from 'react'
+const fs = require('fs');
+
+const content = `import { createContext, useContext, useState, useEffect } from 'react'
+import { API_URL } from '../utils/api'
 
 const AuthContext = createContext(null)
 
@@ -17,9 +20,9 @@ export function AuthProvider({ children }) {
 
   async function fetchCurrentUser() {
     try {
-      const response = await fetch('/api/auth/me', {
+      const response = await fetch(\`\${API_URL}/api/auth/me\`, {
         headers: {
-          'Authorization': `Bearer ${token}`
+          'Authorization': \`Bearer \${token}\`
         }
       })
 
@@ -39,7 +42,7 @@ export function AuthProvider({ children }) {
   }
 
   async function login(email, password) {
-    const response = await fetch('/api/auth/login', {
+    const response = await fetch(\`\${API_URL}/api/auth/login\`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -61,10 +64,10 @@ export function AuthProvider({ children }) {
 
   async function logout() {
     try {
-      await fetch('/api/auth/logout', {
+      await fetch(\`\${API_URL}/api/auth/logout\`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`
+          'Authorization': \`Bearer \${token}\`
         }
       })
     } catch (error) {
@@ -77,11 +80,11 @@ export function AuthProvider({ children }) {
   }
 
   async function updateProfile(updates) {
-    const response = await fetch('/api/auth/profile', {
+    const response = await fetch(\`\${API_URL}/api/auth/profile\`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
+        'Authorization': \`Bearer \${token}\`
       },
       body: JSON.stringify(updates)
     })
@@ -119,3 +122,7 @@ export function useAuth() {
   }
   return context
 }
+`;
+
+fs.writeFileSync('./client/src/context/AuthContext.jsx', content);
+console.log('AuthContext.jsx updated successfully');
