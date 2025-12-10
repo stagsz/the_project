@@ -1,8 +1,40 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
 import db from '../utils/db.js';
 
 const router = Router();
+
+// Setup multer for dataset uploads
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const uploadDir = path.join(process.cwd(), 'datasets');
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, 'dataset-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 100 * 1024 * 1024 }, // 100MB limit
+  fileFilter: (req, file, cb) => {
+    const allowedExtensions = ['.csv', '.json', '.parquet'];
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (allowedExtensions.includes(ext)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only CSV, JSON, and Parquet files are allowed'));
+    }
+  }
+});
 
 // GET /api/devices - List devices
 router.get('/', (req, res) => {
@@ -87,6 +119,73 @@ router.post('/', (req, res) => {
   } catch (error) {
     console.error('Register device error:', error);
     res.status(500).json({ error: { message: 'Failed to register device', code: 'CREATE_ERROR' } });
+  }
+});
+
+// POST /api/devices/simulated - Create simulated device with dataset upload
+router.post('/simulated', upload.single('dataset'), (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: { message: 'Dataset file is required', code: 'VALIDATION_ERROR' } });
+    }
+
+    // Parse device data from request body
+    const deviceData = JSON.parse(req.body.device);
+    const { device_group_id, device_uid, name, type, ip_address, firmware_version, capabilities } = deviceData;
+
+    if (!device_uid || !name || !type) {
+      // Clean up uploaded file if validation fails
+      fs.unlinkSync(req.file.path);
+      return res.status(400).json({ error: { message: 'device_uid, name, and type are required', code: 'VALIDATION_ERROR' } });
+    }
+
+    // Check if device already exists
+    const existingDevice = db.prepare('SELECT id FROM devices WHERE device_uid = ?').get(device_uid);
+    if (existingDevice) {
+      fs.unlinkSync(req.file.path);
+      return res.status(409).json({ error: { message: 'Device with this UID already exists', code: 'DEVICE_EXISTS' } });
+    }
+
+    // Create device with dataset reference
+    const id = uuidv4();
+    const datasetPath = path.relative(process.cwd(), req.file.path);
+    
+    db.prepare(`
+      INSERT INTO devices (id, device_group_id, device_uid, name, type, ip_address, firmware_version, capabilities, is_simulated, status, dataset_path)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 'offline', ?)
+    `).run(
+      id,
+      device_group_id || null,
+      device_uid,
+      name,
+      type,
+      ip_address || null,
+      firmware_version || '1.0.0',
+      JSON.stringify(capabilities || {}),
+      datasetPath
+    );
+
+    const device = db.prepare('SELECT * FROM devices WHERE id = ?').get(id);
+    
+    res.status(201).json({
+      device: {
+        ...device,
+        capabilities: JSON.parse(device.capabilities || '{}')
+      },
+      dataset: {
+        filename: req.file.originalname,
+        path: datasetPath,
+        size: req.file.size,
+        mimetype: req.file.mimetype
+      }
+    });
+  } catch (error) {
+    console.error('Create simulated device error:', error);
+    // Clean up uploaded file on error
+    if (req.file && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
+    res.status(500).json({ error: { message: 'Failed to create simulated device', code: 'CREATE_ERROR' } });
   }
 });
 
