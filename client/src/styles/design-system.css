@@ -1,0 +1,43 @@
+:root {
+  /* Colors - warm, human palette */
+  --bg: #FDFCFB;
+  --bg-subtle: #F7F5F3;
+  --text: #2D2A26;
+  --text-muted: #6B6660;
+  --accent: #1B365D;
+  --accent-light: #E8ECF1;
+  --border: #E5E2DD;
+  --highlight: #FF6B35;
+  
+  /* Spacing */
+  --space-xs: 8px;
+  --space-sm: 14px;
+  --space-md: 20px;
+  --space-lg: 50px;
+  --space-xl: 60px;
+  
+  /* Typography */
+  --font-body: 'Inter', -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  
+  /* Imperfection values */
+  --rotate-slight: -0.3deg;
+  --rotate-opposite: 0.2deg;
+  --shadow-offset: 4px 4px 0 rgba(27, 54, 93, 0.2);
+  
+  /* Transitions */
+  --transition-fast: 0.15s ease;
+  --transition-normal: 0.2s ease;
+}
+
+/* Grain texture (reusable) */
+.grain-bg {
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+}
+
+/* Utility classes for imperfection */
+.rotate-slight { transform: rotate(var(--rotate-slight)); }
+.rotate-opposite { transform: rotate(var(--rotate-opposite)); }
+.shadow-offset { box-shadow: var(--shadow-offset); }
+.hover-shift { transition: transform var(--transition-normal); }
+.hover-shift:hover { transform: translateX(4px); }

@@ -1,32 +1,36 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
-import db from '../utils/db.js';
+import supabase from '../utils/supabase.js';
 
 const router = Router();
 
 // GET /api/maintenance/predictions - List maintenance predictions
-router.get('/predictions', (req, res) => {
+router.get('/predictions', async (req, res) => {
   try {
     const { device_id, status, risk_level, limit = 50, offset = 0 } = req.query;
 
-    let query = `
-      SELECT mp.*, d.name as device_name, d.device_uid
-      FROM maintenance_predictions mp
-      JOIN devices d ON mp.device_id = d.id
-      WHERE 1=1
-    `;
-    const params = [];
+    let query = supabase
+      .from('maintenance_predictions')
+      .select('*, devices(name, device_uid)')
+      .order('predicted_date', { ascending: true })
+      .range(parseInt(offset), parseInt(offset) + parseInt(limit) - 1);
 
-    if (device_id) { query += ' AND mp.device_id = ?'; params.push(device_id); }
-    if (status) { query += ' AND mp.status = ?'; params.push(status); }
-    if (risk_level) { query += ' AND mp.risk_level = ?'; params.push(risk_level); }
+    if (device_id) query = query.eq('device_id', device_id);
+    if (status) query = query.eq('status', status);
+    if (risk_level) query = query.eq('risk_level', risk_level);
 
-    query += ' ORDER BY mp.predicted_date ASC LIMIT ? OFFSET ?';
-    params.push(parseInt(limit), parseInt(offset));
+    const { data: predictions, error } = await query;
 
-    const predictions = db.prepare(query).all(...params);
+    if (error) throw error;
 
-    res.json({ predictions });
+    res.json({
+      predictions: (predictions || []).map(p => ({
+        ...p,
+        device_name: p.devices?.name || null,
+        device_uid: p.devices?.device_uid || null,
+        devices: undefined
+      }))
+    });
   } catch (error) {
     console.error('List predictions error:', error);
     res.status(500).json({ error: { message: 'Failed to list predictions', code: 'LIST_ERROR' } });
@@ -34,35 +38,36 @@ router.get('/predictions', (req, res) => {
 });
 
 // GET /api/maintenance/predictions/:id - Get prediction details
-router.get('/predictions/:id', (req, res) => {
+router.get('/predictions/:id', async (req, res) => {
   try {
-    const prediction = db.prepare(`
-      SELECT mp.*, d.name as device_name, d.device_uid, d.type as device_type,
-             dg.name as group_name, f.name as facility_name
-      FROM maintenance_predictions mp
-      JOIN devices d ON mp.device_id = d.id
-      LEFT JOIN device_groups dg ON d.device_group_id = dg.id
-      LEFT JOIN facilities f ON dg.facility_id = f.id
-      WHERE mp.id = ?
-    `).get(req.params.id);
+    const { data: prediction, error } = await supabase
+      .from('maintenance_predictions')
+      .select('*, devices(name, device_uid, type, device_group_id, device_groups(name, facility_id, facilities(name)))')
+      .eq('id', req.params.id)
+      .single();
 
-    if (!prediction) {
+    if (error || !prediction) {
       return res.status(404).json({ error: { message: 'Prediction not found', code: 'NOT_FOUND' } });
     }
 
     // Get device health history
-    const recentMetrics = db.prepare(`
-      SELECT timestamp, cpu_usage, memory_usage, temperature_celsius, error_count
-      FROM device_metrics
-      WHERE device_id = ?
-      ORDER BY timestamp DESC
-      LIMIT 20
-    `).all(prediction.device_id);
+    const { data: recentMetrics } = await supabase
+      .from('device_metrics')
+      .select('timestamp, cpu_usage, memory_usage, temperature_celsius, error_count')
+      .eq('device_id', prediction.device_id)
+      .order('timestamp', { ascending: false })
+      .limit(20);
 
     res.json({
       prediction: {
         ...prediction,
-        device_health_history: recentMetrics
+        device_name: prediction.devices?.name || null,
+        device_uid: prediction.devices?.device_uid || null,
+        device_type: prediction.devices?.type || null,
+        group_name: prediction.devices?.device_groups?.name || null,
+        facility_name: prediction.devices?.device_groups?.facilities?.name || null,
+        devices: undefined,
+        device_health_history: recentMetrics || []
       }
     });
   } catch (error) {
@@ -72,23 +77,29 @@ router.get('/predictions/:id', (req, res) => {
 });
 
 // PUT /api/maintenance/predictions/:id - Update prediction status
-router.put('/predictions/:id', (req, res) => {
+router.put('/predictions/:id', async (req, res) => {
   try {
     const { status, recommended_action, estimated_cost } = req.body;
 
-    const updates = [];
-    const params = [];
+    const updates = { updated_at: new Date().toISOString() };
 
-    if (status) { updates.push('status = ?'); params.push(status); }
-    if (recommended_action !== undefined) { updates.push('recommended_action = ?'); params.push(recommended_action); }
-    if (estimated_cost !== undefined) { updates.push('estimated_cost = ?'); params.push(estimated_cost); }
+    if (status) updates.status = status;
+    if (recommended_action !== undefined) updates.recommended_action = recommended_action;
+    if (estimated_cost !== undefined) updates.estimated_cost = estimated_cost;
 
-    updates.push('updated_at = datetime("now")');
-    params.push(req.params.id);
+    const { error: updateError } = await supabase
+      .from('maintenance_predictions')
+      .update(updates)
+      .eq('id', req.params.id);
 
-    db.prepare(`UPDATE maintenance_predictions SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+    if (updateError) throw updateError;
 
-    const prediction = db.prepare('SELECT * FROM maintenance_predictions WHERE id = ?').get(req.params.id);
+    const { data: prediction } = await supabase
+      .from('maintenance_predictions')
+      .select('*')
+      .eq('id', req.params.id)
+      .single();
+
     res.json({ prediction });
   } catch (error) {
     console.error('Update prediction error:', error);
@@ -97,7 +108,7 @@ router.put('/predictions/:id', (req, res) => {
 });
 
 // POST /api/maintenance/schedule - Schedule maintenance
-router.post('/schedule', (req, res) => {
+router.post('/schedule', async (req, res) => {
   try {
     const { prediction_id, scheduled_date, notes } = req.body;
 
@@ -106,35 +117,39 @@ router.post('/schedule', (req, res) => {
     }
 
     // Update prediction status to scheduled
-    db.prepare(`
-      UPDATE maintenance_predictions
-      SET status = 'scheduled', predicted_date = ?, updated_at = datetime('now')
-      WHERE id = ?
-    `).run(scheduled_date || new Date().toISOString(), prediction_id);
+    await supabase
+      .from('maintenance_predictions')
+      .update({
+        status: 'scheduled',
+        predicted_date: scheduled_date || new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', prediction_id);
 
-    const prediction = db.prepare(`
-      SELECT mp.*, d.name as device_name
-      FROM maintenance_predictions mp
-      JOIN devices d ON mp.device_id = d.id
-      WHERE mp.id = ?
-    `).get(prediction_id);
+    const { data: prediction } = await supabase
+      .from('maintenance_predictions')
+      .select('*, devices(name)')
+      .eq('id', prediction_id)
+      .single();
 
-    // Create notification
-    const users = db.prepare('SELECT id FROM users WHERE role IN ("admin", "operator")').all();
-    const notifStmt = db.prepare(`
-      INSERT INTO notifications (id, user_id, type, title, message, severity, data)
-      VALUES (?, ?, 'maintenance_alert', ?, ?, 'info', ?)
-    `);
+    // Create notification for admins and operators
+    const { data: users } = await supabase
+      .from('users')
+      .select('id')
+      .in('role', ['admin', 'operator']);
 
-    for (const user of users) {
-      notifStmt.run(
-        uuidv4(),
-        user.id,
-        'maintenance_alert',
-        `Maintenance Scheduled: ${prediction.device_name}`,
-        `${prediction.component} maintenance scheduled for ${scheduled_date || 'soon'}`,
-        JSON.stringify({ prediction_id, device_id: prediction.device_id })
-      );
+    for (const user of users || []) {
+      await supabase
+        .from('notifications')
+        .insert({
+          id: uuidv4(),
+          user_id: user.id,
+          type: 'maintenance_alert',
+          title: `Maintenance Scheduled: ${prediction.devices?.name || 'Unknown'}`,
+          message: `${prediction.component} maintenance scheduled for ${scheduled_date || 'soon'}`,
+          severity: 'info',
+          data: { prediction_id, device_id: prediction.device_id }
+        });
     }
 
     res.json({ prediction, message: 'Maintenance scheduled' });
@@ -145,28 +160,33 @@ router.post('/schedule', (req, res) => {
 });
 
 // GET /api/maintenance/history - Get maintenance history
-router.get('/history', (req, res) => {
+router.get('/history', async (req, res) => {
   try {
     const { device_id, from, to, limit = 100, offset = 0 } = req.query;
 
-    let query = `
-      SELECT mp.*, d.name as device_name, d.device_uid
-      FROM maintenance_predictions mp
-      JOIN devices d ON mp.device_id = d.id
-      WHERE mp.status = 'completed'
-    `;
-    const params = [];
+    let query = supabase
+      .from('maintenance_predictions')
+      .select('*, devices(name, device_uid)')
+      .eq('status', 'completed')
+      .order('updated_at', { ascending: false })
+      .range(parseInt(offset), parseInt(offset) + parseInt(limit) - 1);
 
-    if (device_id) { query += ' AND mp.device_id = ?'; params.push(device_id); }
-    if (from) { query += ' AND mp.updated_at >= ?'; params.push(from); }
-    if (to) { query += ' AND mp.updated_at <= ?'; params.push(to); }
+    if (device_id) query = query.eq('device_id', device_id);
+    if (from) query = query.gte('updated_at', from);
+    if (to) query = query.lte('updated_at', to);
 
-    query += ' ORDER BY mp.updated_at DESC LIMIT ? OFFSET ?';
-    params.push(parseInt(limit), parseInt(offset));
+    const { data: history, error } = await query;
 
-    const history = db.prepare(query).all(...params);
+    if (error) throw error;
 
-    res.json({ history });
+    res.json({
+      history: (history || []).map(h => ({
+        ...h,
+        device_name: h.devices?.name || null,
+        device_uid: h.devices?.device_uid || null,
+        devices: undefined
+      }))
+    });
   } catch (error) {
     console.error('Get history error:', error);
     res.status(500).json({ error: { message: 'Failed to get history', code: 'GET_ERROR' } });
@@ -174,9 +194,13 @@ router.get('/history', (req, res) => {
 });
 
 // POST /api/maintenance/generate-predictions - Generate maintenance predictions (simulation)
-router.post('/generate-predictions', (req, res) => {
+router.post('/generate-predictions', async (req, res) => {
   try {
-    const devices = db.prepare('SELECT id, name, type FROM devices WHERE is_active = 1').all();
+    const { data: devices } = await supabase
+      .from('devices')
+      .select('id, name, type')
+      .eq('is_active', true);
+
     const components = ['Motor', 'Bearing', 'Seal', 'Filter', 'Belt', 'Pump', 'Compressor'];
     const actions = [
       'Replace worn component',
@@ -187,12 +211,8 @@ router.post('/generate-predictions', (req, res) => {
     ];
 
     const createdPredictions = [];
-    const stmt = db.prepare(`
-      INSERT INTO maintenance_predictions (id, device_id, component, prediction_type, predicted_date, confidence_score, risk_level, recommended_action, estimated_cost)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
 
-    for (const device of devices) {
+    for (const device of devices || []) {
       // 30% chance to generate a prediction for each device
       if (Math.random() > 0.3) continue;
 
@@ -209,7 +229,19 @@ router.post('/generate-predictions', (req, res) => {
       const action = actions[Math.floor(Math.random() * actions.length)];
       const cost = Math.floor(Math.random() * 5000) + 100;
 
-      stmt.run(id, device.id, component, predictionType, predictedDate, confidence, riskLevel, action, cost);
+      await supabase
+        .from('maintenance_predictions')
+        .insert({
+          id,
+          device_id: device.id,
+          component,
+          prediction_type: predictionType,
+          predicted_date: predictedDate,
+          confidence_score: confidence,
+          risk_level: riskLevel,
+          recommended_action: action,
+          estimated_cost: cost
+        });
 
       createdPredictions.push({
         id,

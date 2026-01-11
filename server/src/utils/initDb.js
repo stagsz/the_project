@@ -264,6 +264,21 @@ db.exec(`
     timestamp TEXT DEFAULT (datetime('now'))
   );
 
+  -- AI Response Logs table
+  CREATE TABLE IF NOT EXISTS ai_logs (
+    id TEXT PRIMARY KEY,
+    query_type TEXT CHECK(query_type IN ('query', 'insights', 'explain_anomaly', 'recommendations', 'analyze_training')),
+    query_text TEXT,
+    response_text TEXT,
+    device_id TEXT REFERENCES devices(id),
+    anomaly_id TEXT REFERENCES anomalies(id),
+    training_round_id TEXT REFERENCES training_rounds(id),
+    device_name TEXT,
+    device_type TEXT,
+    user_id TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+
   -- Create indexes for performance
   CREATE INDEX IF NOT EXISTS idx_devices_status ON devices(status);
   CREATE INDEX IF NOT EXISTS idx_devices_group ON devices(device_group_id);
@@ -277,6 +292,9 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_anomalies_status ON anomalies(status);
   CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id);
   CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp);
+  CREATE INDEX IF NOT EXISTS idx_ai_logs_created ON ai_logs(created_at);
+  CREATE INDEX IF NOT EXISTS idx_ai_logs_device ON ai_logs(device_id);
+  CREATE INDEX IF NOT EXISTS idx_ai_logs_query_type ON ai_logs(query_type);
 `);
 
 console.log('Database tables created successfully.');

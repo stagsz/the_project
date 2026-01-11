@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { Activity, Plus, Play, Pause, AlertCircle } from 'lucide-react'
 import Modal from '../components/Modal'
+import Tooltip, { TRAINING_TOOLTIPS } from '../components/Tooltip'
 
 const statusColors = {
   pending: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300',
@@ -249,14 +250,16 @@ export default function Training() {
 
           {/* Model Selection */}
           <div>
-            <label htmlFor="model_id" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Model *
-            </label>
+            <Tooltip content={TRAINING_TOOLTIPS.model.content} position="right">
+              <label htmlFor="model_id" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Model *
+              </label>
+            </Tooltip>
             <select
               id="model_id"
               value={trainingConfig.model_id}
               onChange={(e) => setTrainingConfig({ ...trainingConfig, model_id: e.target.value })}
-              className="input"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               required
             >
               <option value="">-- Select Model --</option>
@@ -271,9 +274,11 @@ export default function Training() {
           {/* Device Selection */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                Target Devices
-              </label>
+              <Tooltip content={TRAINING_TOOLTIPS.targetDevices.content} position="right">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Target Devices
+                </label>
+              </Tooltip>
               <div className="flex gap-2">
                 <button type="button" onClick={selectAllDevices} className="text-xs text-blue-600 hover:underline">
                   Select All
@@ -316,9 +321,11 @@ export default function Training() {
             <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Hyperparameters</h4>
             <div className="grid grid-cols-3 gap-4">
               <div>
-                <label htmlFor="learning_rate" className="block text-xs text-gray-500 mb-1">
-                  Learning Rate
-                </label>
+                <Tooltip content={TRAINING_TOOLTIPS.learningRate.content} position="top">
+                  <label htmlFor="learning_rate" className="block text-xs text-gray-500 mb-1">
+                    Learning Rate
+                  </label>
+                </Tooltip>
                 <input
                   id="learning_rate"
                   type="number"
@@ -328,13 +335,15 @@ export default function Training() {
                     ...trainingConfig,
                     hyperparameters: { ...trainingConfig.hyperparameters, learning_rate: parseFloat(e.target.value) }
                   })}
-                  className="input"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
               <div>
-                <label htmlFor="batch_size" className="block text-xs text-gray-500 mb-1">
-                  Batch Size
-                </label>
+                <Tooltip content={TRAINING_TOOLTIPS.batchSize.content} position="top">
+                  <label htmlFor="batch_size" className="block text-xs text-gray-500 mb-1">
+                    Batch Size
+                  </label>
+                </Tooltip>
                 <input
                   id="batch_size"
                   type="number"
@@ -343,13 +352,15 @@ export default function Training() {
                     ...trainingConfig,
                     hyperparameters: { ...trainingConfig.hyperparameters, batch_size: parseInt(e.target.value) }
                   })}
-                  className="input"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
               <div>
-                <label htmlFor="local_epochs" className="block text-xs text-gray-500 mb-1">
-                  Local Epochs
-                </label>
+                <Tooltip content={TRAINING_TOOLTIPS.localEpochs.content} position="top">
+                  <label htmlFor="local_epochs" className="block text-xs text-gray-500 mb-1">
+                    Local Epochs
+                  </label>
+                </Tooltip>
                 <input
                   id="local_epochs"
                   type="number"
@@ -358,7 +369,7 @@ export default function Training() {
                     ...trainingConfig,
                     hyperparameters: { ...trainingConfig.hyperparameters, local_epochs: parseInt(e.target.value) }
                   })}
-                  className="input"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
             </div>
@@ -369,9 +380,11 @@ export default function Training() {
             <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Differential Privacy</h4>
             <div className="grid grid-cols-3 gap-4">
               <div>
-                <label htmlFor="epsilon" className="block text-xs text-gray-500 mb-1">
-                  Epsilon
-                </label>
+                <Tooltip content={TRAINING_TOOLTIPS.epsilon.content} position="top">
+                  <label htmlFor="epsilon" className="block text-xs text-gray-500 mb-1">
+                    Epsilon
+                  </label>
+                </Tooltip>
                 <input
                   id="epsilon"
                   type="number"
@@ -381,13 +394,15 @@ export default function Training() {
                     ...trainingConfig,
                     privacy_config: { ...trainingConfig.privacy_config, epsilon: parseFloat(e.target.value) }
                   })}
-                  className="input"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
               <div>
-                <label htmlFor="delta" className="block text-xs text-gray-500 mb-1">
-                  Delta
-                </label>
+                <Tooltip content={TRAINING_TOOLTIPS.delta.content} position="top">
+                  <label htmlFor="delta" className="block text-xs text-gray-500 mb-1">
+                    Delta
+                  </label>
+                </Tooltip>
                 <input
                   id="delta"
                   type="number"
@@ -397,13 +412,15 @@ export default function Training() {
                     ...trainingConfig,
                     privacy_config: { ...trainingConfig.privacy_config, delta: parseFloat(e.target.value) }
                   })}
-                  className="input"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
               <div>
-                <label htmlFor="noise_multiplier" className="block text-xs text-gray-500 mb-1">
-                  Noise Multiplier
-                </label>
+                <Tooltip content={TRAINING_TOOLTIPS.noiseMultiplier.content} position="top">
+                  <label htmlFor="noise_multiplier" className="block text-xs text-gray-500 mb-1">
+                    Noise Multiplier
+                  </label>
+                </Tooltip>
                 <input
                   id="noise_multiplier"
                   type="number"
@@ -413,7 +430,7 @@ export default function Training() {
                     ...trainingConfig,
                     privacy_config: { ...trainingConfig.privacy_config, noise_multiplier: parseFloat(e.target.value) }
                   })}
-                  className="input"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
             </div>
@@ -421,14 +438,16 @@ export default function Training() {
 
           {/* Aggregation Method */}
           <div>
-            <label htmlFor="aggregation_method" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Aggregation Method
-            </label>
+            <Tooltip content={TRAINING_TOOLTIPS.aggregationMethod.content} position="right">
+              <label htmlFor="aggregation_method" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Aggregation Method
+              </label>
+            </Tooltip>
             <select
               id="aggregation_method"
               value={trainingConfig.aggregation_method}
               onChange={(e) => setTrainingConfig({ ...trainingConfig, aggregation_method: e.target.value })}
-              className="input"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               {aggregationMethods.map((method) => (
                 <option key={method.value} value={method.value}>

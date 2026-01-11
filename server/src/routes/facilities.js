@@ -1,24 +1,52 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
-import db from '../utils/db.js';
+import supabase from '../utils/supabase.js';
 
 const router = Router();
 
 // GET /api/facilities - List all facilities
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   try {
-    const facilities = db.prepare(`
-      SELECT f.*,
-        (SELECT COUNT(*) FROM device_groups dg WHERE dg.facility_id = f.id) as group_count,
-        (SELECT COUNT(*) FROM devices d
-         JOIN device_groups dg ON d.device_group_id = dg.id
-         WHERE dg.facility_id = f.id) as device_count
-      FROM facilities f
-      WHERE f.is_active = 1
-      ORDER BY f.name
-    `).all();
+    const { data: facilities, error } = await supabase
+      .from('facilities')
+      .select('*')
+      .eq('is_active', true)
+      .order('name');
 
-    res.json({ facilities });
+    if (error) throw error;
+
+    // Get counts for each facility
+    const facilitiesWithCounts = await Promise.all(
+      facilities.map(async (f) => {
+        const { count: groupCount } = await supabase
+          .from('device_groups')
+          .select('*', { count: 'exact', head: true })
+          .eq('facility_id', f.id);
+
+        const { data: groups } = await supabase
+          .from('device_groups')
+          .select('id')
+          .eq('facility_id', f.id);
+
+        const groupIds = groups?.map(g => g.id) || [];
+        let deviceCount = 0;
+        if (groupIds.length > 0) {
+          const { count } = await supabase
+            .from('devices')
+            .select('*', { count: 'exact', head: true })
+            .in('device_group_id', groupIds);
+          deviceCount = count || 0;
+        }
+
+        return {
+          ...f,
+          group_count: groupCount || 0,
+          device_count: deviceCount
+        };
+      })
+    );
+
+    res.json({ facilities: facilitiesWithCounts });
   } catch (error) {
     console.error('List facilities error:', error);
     res.status(500).json({ error: { message: 'Failed to list facilities', code: 'LIST_ERROR' } });
@@ -26,7 +54,7 @@ router.get('/', (req, res) => {
 });
 
 // POST /api/facilities - Create facility
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   try {
     const { name, location, timezone = 'UTC', description } = req.body;
 
@@ -35,12 +63,20 @@ router.post('/', (req, res) => {
     }
 
     const id = uuidv4();
-    db.prepare(`
-      INSERT INTO facilities (id, name, location, timezone, description)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(id, name, location, timezone, description);
+    const { error: insertError } = await supabase
+      .from('facilities')
+      .insert({ id, name, location, timezone, description });
 
-    const facility = db.prepare('SELECT * FROM facilities WHERE id = ?').get(id);
+    if (insertError) throw insertError;
+
+    const { data: facility, error: fetchError } = await supabase
+      .from('facilities')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (fetchError) throw fetchError;
+
     res.status(201).json({ facility });
   } catch (error) {
     console.error('Create facility error:', error);
@@ -49,30 +85,47 @@ router.post('/', (req, res) => {
 });
 
 // GET /api/facilities/:id - Get facility details
-router.get('/:id', (req, res) => {
+router.get('/:id', async (req, res) => {
   try {
-    const facility = db.prepare(`
-      SELECT f.*,
-        (SELECT COUNT(*) FROM device_groups dg WHERE dg.facility_id = f.id) as group_count,
-        (SELECT COUNT(*) FROM devices d
-         JOIN device_groups dg ON d.device_group_id = dg.id
-         WHERE dg.facility_id = f.id) as device_count
-      FROM facilities f
-      WHERE f.id = ?
-    `).get(req.params.id);
+    const { data: facility, error } = await supabase
+      .from('facilities')
+      .select('*')
+      .eq('id', req.params.id)
+      .single();
 
-    if (!facility) {
+    if (error || !facility) {
       return res.status(404).json({ error: { message: 'Facility not found', code: 'NOT_FOUND' } });
     }
 
-    const groups = db.prepare(`
-      SELECT dg.*,
-        (SELECT COUNT(*) FROM devices d WHERE d.device_group_id = dg.id) as device_count
-      FROM device_groups dg
-      WHERE dg.facility_id = ?
-    `).all(req.params.id);
+    // Get groups for this facility
+    const { data: groups } = await supabase
+      .from('device_groups')
+      .select('*')
+      .eq('facility_id', req.params.id);
 
-    res.json({ facility: { ...facility, groups } });
+    // Get device counts for each group
+    const groupsWithCounts = await Promise.all(
+      (groups || []).map(async (g) => {
+        const { count } = await supabase
+          .from('devices')
+          .select('*', { count: 'exact', head: true })
+          .eq('device_group_id', g.id);
+        return { ...g, device_count: count || 0 };
+      })
+    );
+
+    // Calculate totals
+    const groupCount = groups?.length || 0;
+    const deviceCount = groupsWithCounts.reduce((acc, g) => acc + g.device_count, 0);
+
+    res.json({
+      facility: {
+        ...facility,
+        group_count: groupCount,
+        device_count: deviceCount,
+        groups: groupsWithCounts
+      }
+    });
   } catch (error) {
     console.error('Get facility error:', error);
     res.status(500).json({ error: { message: 'Failed to get facility', code: 'GET_ERROR' } });
@@ -80,25 +133,33 @@ router.get('/:id', (req, res) => {
 });
 
 // PUT /api/facilities/:id - Update facility
-router.put('/:id', (req, res) => {
+router.put('/:id', async (req, res) => {
   try {
     const { name, location, timezone, description, is_active } = req.body;
 
-    const updates = [];
-    const params = [];
+    const updates = { updated_at: new Date().toISOString() };
 
-    if (name) { updates.push('name = ?'); params.push(name); }
-    if (location !== undefined) { updates.push('location = ?'); params.push(location); }
-    if (timezone) { updates.push('timezone = ?'); params.push(timezone); }
-    if (description !== undefined) { updates.push('description = ?'); params.push(description); }
-    if (is_active !== undefined) { updates.push('is_active = ?'); params.push(is_active ? 1 : 0); }
+    if (name) updates.name = name;
+    if (location !== undefined) updates.location = location;
+    if (timezone) updates.timezone = timezone;
+    if (description !== undefined) updates.description = description;
+    if (is_active !== undefined) updates.is_active = is_active;
 
-    updates.push('updated_at = datetime("now")');
-    params.push(req.params.id);
+    const { error: updateError } = await supabase
+      .from('facilities')
+      .update(updates)
+      .eq('id', req.params.id);
 
-    db.prepare(`UPDATE facilities SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+    if (updateError) throw updateError;
 
-    const facility = db.prepare('SELECT * FROM facilities WHERE id = ?').get(req.params.id);
+    const { data: facility, error: fetchError } = await supabase
+      .from('facilities')
+      .select('*')
+      .eq('id', req.params.id)
+      .single();
+
+    if (fetchError) throw fetchError;
+
     res.json({ facility });
   } catch (error) {
     console.error('Update facility error:', error);
@@ -107,9 +168,15 @@ router.put('/:id', (req, res) => {
 });
 
 // DELETE /api/facilities/:id - Deactivate facility
-router.delete('/:id', (req, res) => {
+router.delete('/:id', async (req, res) => {
   try {
-    db.prepare('UPDATE facilities SET is_active = 0, updated_at = datetime("now") WHERE id = ?').run(req.params.id);
+    const { error } = await supabase
+      .from('facilities')
+      .update({ is_active: false, updated_at: new Date().toISOString() })
+      .eq('id', req.params.id);
+
+    if (error) throw error;
+
     res.json({ message: 'Facility deactivated' });
   } catch (error) {
     console.error('Delete facility error:', error);

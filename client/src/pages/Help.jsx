@@ -13,7 +13,11 @@ import {
   Zap,
   BookOpen,
   CheckCircle2,
-  AlertTriangle
+  AlertTriangle,
+  Factory,
+  Gauge,
+  Settings,
+  Target
 } from 'lucide-react'
 
 const faqs = [
@@ -257,8 +261,123 @@ const workflows = [
       'Validate predictions against holdout data',
       'Deploy model for real-time forecasting'
     ]
+  },
+  {
+    title: 'Process Optimization',
+    icon: Factory,
+    steps: [
+      'Go to Process Optimization page',
+      'Select your process unit (reactor, column, etc.)',
+      'Review current OEE metrics and parameters',
+      'Click "Simulate" for what-if analysis',
+      'Adjust temperature, pressure, flow parameters',
+      'Compare predicted outcomes',
+      'Click "Optimize" to get AI recommendations',
+      'Apply recommended setpoints to production'
+    ]
   }
 ]
+
+// Training parameters reference data
+const trainingParameters = {
+  hyperparameters: [
+    {
+      name: 'Learning Rate',
+      default: '0.01',
+      range: '0.001 - 0.1',
+      description: 'Controls how much the model adjusts its weights based on each batch of data.',
+      impact: {
+        higher: 'Faster learning, but risk of overshooting optimal values and unstable training',
+        lower: 'More stable and precise convergence, but slower training time',
+        recommendation: 'Start with 0.01. Reduce if training is unstable, increase if too slow.'
+      }
+    },
+    {
+      name: 'Batch Size',
+      default: '32',
+      range: '16 - 128',
+      description: 'Number of samples processed before the model updates its weights.',
+      impact: {
+        higher: 'Smoother gradients, more memory required, faster per-epoch but fewer updates',
+        lower: 'Noisier gradients (can help generalization), less memory, more updates per epoch',
+        recommendation: '32 is good for most edge devices. Use 16 if memory-constrained.'
+      }
+    },
+    {
+      name: 'Local Epochs',
+      default: '5',
+      range: '1 - 10',
+      description: 'Number of complete passes through local data before sending updates to server.',
+      impact: {
+        higher: 'Better local learning, but may diverge from global model (client drift)',
+        lower: 'Better synchronization with global model, but more communication overhead',
+        recommendation: '5 epochs balances local learning with global convergence.'
+      }
+    }
+  ],
+  privacy: [
+    {
+      name: 'Epsilon (ε)',
+      default: '1.0',
+      range: '0.1 - 10',
+      description: 'Privacy budget controlling the privacy-utility tradeoff. Lower = more private.',
+      impact: {
+        higher: 'Better model accuracy, weaker privacy guarantees',
+        lower: 'Stronger privacy protection, but reduced model performance',
+        recommendation: 'Use 1.0 for balanced privacy. Note: Epsilon accumulates across rounds!'
+      },
+      warning: 'Total epsilon across all training rounds should stay below 10 for meaningful privacy.'
+    },
+    {
+      name: 'Delta (δ)',
+      default: '0.00001',
+      range: '1e-7 - 1e-5',
+      description: 'Probability that the privacy guarantee may fail. Should be very small.',
+      impact: {
+        higher: 'Slightly better utility, acceptable for less sensitive data',
+        lower: 'Stronger guarantees, recommended for sensitive data',
+        recommendation: 'Keep at 1e-5 or lower. Should be < 1/N where N is dataset size.'
+      }
+    },
+    {
+      name: 'Noise Multiplier',
+      default: '1.1',
+      range: '0.5 - 2.0',
+      description: 'Amount of Gaussian noise added to gradients for differential privacy.',
+      impact: {
+        higher: 'More privacy protection, noisier gradients, slower learning',
+        lower: 'Less noise, faster learning, weaker privacy',
+        recommendation: '1.1 provides good privacy-utility balance for most use cases.'
+      }
+    }
+  ],
+  aggregation: [
+    {
+      name: 'FedAvg',
+      fullName: 'Federated Averaging',
+      description: 'Simple weighted average of model updates from all devices.',
+      bestFor: 'Homogeneous data distributions (IID data)',
+      pros: ['Simple and efficient', 'Low communication overhead', 'Well-understood theoretically'],
+      cons: ['Struggles with non-IID data', 'May diverge with heterogeneous devices']
+    },
+    {
+      name: 'FedProx',
+      fullName: 'Proximal Federated Optimization',
+      description: 'Adds a regularization term to prevent local models from drifting too far from global model.',
+      bestFor: 'Heterogeneous data, unreliable devices, non-IID scenarios',
+      pros: ['Handles system heterogeneity', 'More stable than FedAvg on non-IID', 'Configurable proximal term'],
+      cons: ['Slightly slower convergence', 'Extra hyperparameter (μ) to tune']
+    },
+    {
+      name: 'SCAFFOLD',
+      fullName: 'Stochastic Controlled Averaging',
+      description: 'Uses control variates to correct for client drift, tracking update directions.',
+      bestFor: 'Highly non-IID data distributions',
+      pros: ['Best convergence on non-IID data', 'Reduces client drift effectively', 'Proven theoretical guarantees'],
+      cons: ['Requires more memory (control variates)', 'More communication per round', 'More complex implementation']
+    }
+  ]
+}
 
 function AccordionItem({ faq, isOpen, onToggle }) {
   return (
@@ -370,6 +489,142 @@ export default function Help() {
                 </li>
               ))}
             </ol>
+          </div>
+        </div>
+      </div>
+
+      {/* Training Parameters Reference */}
+      <div className="card overflow-hidden">
+        <div className="p-4 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-violet-50 to-purple-50 dark:from-violet-900/20 dark:to-purple-900/20">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+            <Settings className="w-5 h-5 text-violet-600" />
+            Training Parameters Reference
+          </h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+            Detailed guide to all configurable training parameters and their effects
+          </p>
+        </div>
+
+        {/* Hyperparameters */}
+        <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+          <h3 className="font-medium text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+            <Gauge className="w-4 h-4 text-blue-600" />
+            Hyperparameters
+          </h3>
+          <div className="space-y-4">
+            {trainingParameters.hyperparameters.map((param) => (
+              <div key={param.name} className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-medium text-gray-900 dark:text-white">{param.name}</span>
+                  <div className="flex gap-2">
+                    <span className="text-xs px-2 py-1 bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-400 rounded">
+                      Default: {param.default}
+                    </span>
+                    <span className="text-xs px-2 py-1 bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded">
+                      Range: {param.range}
+                    </span>
+                  </div>
+                </div>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">{param.description}</p>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
+                  <div className="p-2 bg-rose-50 dark:bg-rose-900/30 rounded">
+                    <span className="font-medium text-rose-700 dark:text-rose-400">Higher value:</span>
+                    <p className="text-rose-600 dark:text-rose-300 mt-1">{param.impact.higher}</p>
+                  </div>
+                  <div className="p-2 bg-blue-50 dark:bg-blue-900/30 rounded">
+                    <span className="font-medium text-blue-700 dark:text-blue-400">Lower value:</span>
+                    <p className="text-blue-600 dark:text-blue-300 mt-1">{param.impact.lower}</p>
+                  </div>
+                  <div className="p-2 bg-emerald-50 dark:bg-emerald-900/30 rounded">
+                    <span className="font-medium text-emerald-700 dark:text-emerald-400">Recommendation:</span>
+                    <p className="text-emerald-600 dark:text-emerald-300 mt-1">{param.impact.recommendation}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Privacy Parameters */}
+        <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+          <h3 className="font-medium text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+            <Shield className="w-4 h-4 text-amber-600" />
+            Differential Privacy
+          </h3>
+          <div className="space-y-4">
+            {trainingParameters.privacy.map((param) => (
+              <div key={param.name} className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-medium text-gray-900 dark:text-white">{param.name}</span>
+                  <div className="flex gap-2">
+                    <span className="text-xs px-2 py-1 bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-400 rounded">
+                      Default: {param.default}
+                    </span>
+                    <span className="text-xs px-2 py-1 bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400 rounded">
+                      Range: {param.range}
+                    </span>
+                  </div>
+                </div>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">{param.description}</p>
+                {param.warning && (
+                  <div className="mb-3 p-2 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 rounded text-xs text-amber-700 dark:text-amber-400">
+                    <AlertTriangle className="w-3 h-3 inline mr-1" />
+                    {param.warning}
+                  </div>
+                )}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
+                  <div className="p-2 bg-rose-50 dark:bg-rose-900/30 rounded">
+                    <span className="font-medium text-rose-700 dark:text-rose-400">Higher value:</span>
+                    <p className="text-rose-600 dark:text-rose-300 mt-1">{param.impact.higher}</p>
+                  </div>
+                  <div className="p-2 bg-blue-50 dark:bg-blue-900/30 rounded">
+                    <span className="font-medium text-blue-700 dark:text-blue-400">Lower value:</span>
+                    <p className="text-blue-600 dark:text-blue-300 mt-1">{param.impact.lower}</p>
+                  </div>
+                  <div className="p-2 bg-emerald-50 dark:bg-emerald-900/30 rounded">
+                    <span className="font-medium text-emerald-700 dark:text-emerald-400">Recommendation:</span>
+                    <p className="text-emerald-600 dark:text-emerald-300 mt-1">{param.impact.recommendation}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Aggregation Methods */}
+        <div className="p-6">
+          <h3 className="font-medium text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+            <Target className="w-4 h-4 text-emerald-600" />
+            Aggregation Methods
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {trainingParameters.aggregation.map((method) => (
+              <div key={method.name} className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                <div className="mb-3">
+                  <span className="font-medium text-gray-900 dark:text-white">{method.name}</span>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">{method.fullName}</p>
+                </div>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">{method.description}</p>
+                <div className="mb-3 p-2 bg-blue-50 dark:bg-blue-900/30 rounded">
+                  <span className="text-xs font-medium text-blue-700 dark:text-blue-400">Best for:</span>
+                  <p className="text-xs text-blue-600 dark:text-blue-300 mt-1">{method.bestFor}</p>
+                </div>
+                <div className="space-y-2 text-xs">
+                  <div>
+                    <span className="font-medium text-emerald-600 dark:text-emerald-400">Pros:</span>
+                    <ul className="list-disc list-inside text-gray-600 dark:text-gray-400 mt-1">
+                      {method.pros.map((pro, i) => <li key={i}>{pro}</li>)}
+                    </ul>
+                  </div>
+                  <div>
+                    <span className="font-medium text-rose-600 dark:text-rose-400">Cons:</span>
+                    <ul className="list-disc list-inside text-gray-600 dark:text-gray-400 mt-1">
+                      {method.cons.map((con, i) => <li key={i}>{con}</li>)}
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       </div>

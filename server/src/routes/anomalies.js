@@ -1,47 +1,50 @@
 import { Router } from 'express';
-import db from '../utils/db.js';
+import { v4 as uuidv4 } from 'uuid';
+import supabase from '../utils/supabase.js';
 
 const router = Router();
 
 // GET /api/anomalies - List anomalies
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const { device_id, status, severity, type, limit = 50, offset = 0 } = req.query;
 
-    let query = `
-      SELECT a.*, d.name as device_name, d.device_uid
-      FROM anomalies a
-      JOIN devices d ON a.device_id = d.id
-      WHERE 1=1
-    `;
-    const params = [];
+    let query = supabase
+      .from('anomalies')
+      .select('*, devices(name, device_uid)')
+      .order('detected_at', { ascending: false })
+      .range(parseInt(offset), parseInt(offset) + parseInt(limit) - 1);
 
-    if (device_id) { query += ' AND a.device_id = ?'; params.push(device_id); }
-    if (status) { query += ' AND a.status = ?'; params.push(status); }
-    if (severity) { query += ' AND a.severity = ?'; params.push(severity); }
-    if (type) { query += ' AND a.anomaly_type = ?'; params.push(type); }
+    if (device_id) query = query.eq('device_id', device_id);
+    if (status) query = query.eq('status', status);
+    if (severity) query = query.eq('severity', severity);
+    if (type) query = query.eq('anomaly_type', type);
 
-    query += ' ORDER BY a.detected_at DESC LIMIT ? OFFSET ?';
-    params.push(parseInt(limit), parseInt(offset));
+    const { data: anomalies, error } = await query;
 
-    const anomalies = db.prepare(query).all(...params);
+    if (error) throw error;
 
     // Get total count
-    let countQuery = 'SELECT COUNT(*) as count FROM anomalies WHERE 1=1';
-    const countParams = [];
-    if (device_id) { countQuery += ' AND device_id = ?'; countParams.push(device_id); }
-    if (status) { countQuery += ' AND status = ?'; countParams.push(status); }
-    if (severity) { countQuery += ' AND severity = ?'; countParams.push(severity); }
-    if (type) { countQuery += ' AND anomaly_type = ?'; countParams.push(type); }
+    let countQuery = supabase
+      .from('anomalies')
+      .select('*', { count: 'exact', head: true });
 
-    const { count } = db.prepare(countQuery).get(...countParams);
+    if (device_id) countQuery = countQuery.eq('device_id', device_id);
+    if (status) countQuery = countQuery.eq('status', status);
+    if (severity) countQuery = countQuery.eq('severity', severity);
+    if (type) countQuery = countQuery.eq('anomaly_type', type);
+
+    const { count } = await countQuery;
 
     res.json({
-      anomalies: anomalies.map(a => ({
+      anomalies: (anomalies || []).map(a => ({
         ...a,
-        sensor_data: JSON.parse(a.sensor_data || '{}')
+        device_name: a.devices?.name || null,
+        device_uid: a.devices?.device_uid || null,
+        devices: undefined,
+        sensor_data: a.sensor_data || {}
       })),
-      total: count
+      total: count || 0
     });
   } catch (error) {
     console.error('List anomalies error:', error);
@@ -50,36 +53,38 @@ router.get('/', (req, res) => {
 });
 
 // GET /api/anomalies/:id - Get anomaly details
-router.get('/:id', (req, res) => {
+router.get('/:id', async (req, res) => {
   try {
-    const anomaly = db.prepare(`
-      SELECT a.*, d.name as device_name, d.device_uid, d.type as device_type,
-             dg.name as group_name, f.name as facility_name
-      FROM anomalies a
-      JOIN devices d ON a.device_id = d.id
-      LEFT JOIN device_groups dg ON d.device_group_id = dg.id
-      LEFT JOIN facilities f ON dg.facility_id = f.id
-      WHERE a.id = ?
-    `).get(req.params.id);
+    const { data: anomaly, error } = await supabase
+      .from('anomalies')
+      .select('*, devices(name, device_uid, type, device_group_id, device_groups(name, facility_id, facilities(name)))')
+      .eq('id', req.params.id)
+      .single();
 
-    if (!anomaly) {
+    if (error || !anomaly) {
       return res.status(404).json({ error: { message: 'Anomaly not found', code: 'NOT_FOUND' } });
     }
 
     // Get related anomalies from same device
-    const relatedAnomalies = db.prepare(`
-      SELECT id, anomaly_type, severity, status, detected_at
-      FROM anomalies
-      WHERE device_id = ? AND id != ?
-      ORDER BY detected_at DESC
-      LIMIT 5
-    `).all(anomaly.device_id, req.params.id);
+    const { data: relatedAnomalies } = await supabase
+      .from('anomalies')
+      .select('id, anomaly_type, severity, status, detected_at')
+      .eq('device_id', anomaly.device_id)
+      .neq('id', req.params.id)
+      .order('detected_at', { ascending: false })
+      .limit(5);
 
     res.json({
       anomaly: {
         ...anomaly,
-        sensor_data: JSON.parse(anomaly.sensor_data || '{}'),
-        related_anomalies: relatedAnomalies
+        device_name: anomaly.devices?.name || null,
+        device_uid: anomaly.devices?.device_uid || null,
+        device_type: anomaly.devices?.type || null,
+        group_name: anomaly.devices?.device_groups?.name || null,
+        facility_name: anomaly.devices?.device_groups?.facilities?.name || null,
+        devices: undefined,
+        sensor_data: anomaly.sensor_data || {},
+        related_anomalies: relatedAnomalies || []
       }
     });
   } catch (error) {
@@ -89,30 +94,37 @@ router.get('/:id', (req, res) => {
 });
 
 // PUT /api/anomalies/:id - Update anomaly status
-router.put('/:id', (req, res) => {
+router.put('/:id', async (req, res) => {
   try {
     const { status, resolution_notes, resolved_by } = req.body;
 
-    const updates = [];
-    const params = [];
+    const updates = {};
 
-    if (status) { updates.push('status = ?'); params.push(status); }
-    if (resolution_notes !== undefined) { updates.push('resolution_notes = ?'); params.push(resolution_notes); }
-    if (resolved_by) { updates.push('resolved_by = ?'); params.push(resolved_by); }
+    if (status) updates.status = status;
+    if (resolution_notes !== undefined) updates.resolution_notes = resolution_notes;
+    if (resolved_by) updates.resolved_by = resolved_by;
 
     if (status === 'resolved' || status === 'false_alarm') {
-      updates.push('resolved_at = datetime("now")');
+      updates.resolved_at = new Date().toISOString();
     }
 
-    params.push(req.params.id);
+    const { error: updateError } = await supabase
+      .from('anomalies')
+      .update(updates)
+      .eq('id', req.params.id);
 
-    db.prepare(`UPDATE anomalies SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+    if (updateError) throw updateError;
 
-    const anomaly = db.prepare('SELECT * FROM anomalies WHERE id = ?').get(req.params.id);
+    const { data: anomaly } = await supabase
+      .from('anomalies')
+      .select('*')
+      .eq('id', req.params.id)
+      .single();
+
     res.json({
       anomaly: {
         ...anomaly,
-        sensor_data: JSON.parse(anomaly.sensor_data || '{}')
+        sensor_data: anomaly.sensor_data || {}
       }
     });
   } catch (error) {
@@ -122,25 +134,38 @@ router.put('/:id', (req, res) => {
 });
 
 // POST /api/anomalies/:id/acknowledge - Acknowledge anomaly
-router.post('/:id/acknowledge', (req, res) => {
+router.post('/:id/acknowledge', async (req, res) => {
   try {
     const { user_id } = req.body;
 
-    db.prepare(`
-      UPDATE anomalies SET status = 'acknowledged' WHERE id = ? AND status = 'new'
-    `).run(req.params.id);
+    await supabase
+      .from('anomalies')
+      .update({ status: 'acknowledged' })
+      .eq('id', req.params.id)
+      .eq('status', 'new');
 
     // Create audit log
-    db.prepare(`
-      INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, new_values)
-      VALUES (?, ?, 'acknowledge_anomaly', 'anomaly', ?, '{"status": "acknowledged"}')
-    `).run(require('uuid').v4(), user_id, req.params.id);
+    await supabase
+      .from('audit_logs')
+      .insert({
+        id: uuidv4(),
+        user_id,
+        action: 'acknowledge_anomaly',
+        entity_type: 'anomaly',
+        entity_id: req.params.id,
+        new_values: { status: 'acknowledged' }
+      });
 
-    const anomaly = db.prepare('SELECT * FROM anomalies WHERE id = ?').get(req.params.id);
+    const { data: anomaly } = await supabase
+      .from('anomalies')
+      .select('*')
+      .eq('id', req.params.id)
+      .single();
+
     res.json({
       anomaly: {
         ...anomaly,
-        sensor_data: JSON.parse(anomaly.sensor_data || '{}')
+        sensor_data: anomaly.sensor_data || {}
       },
       message: 'Anomaly acknowledged'
     });
@@ -151,23 +176,32 @@ router.post('/:id/acknowledge', (req, res) => {
 });
 
 // POST /api/anomalies/:id/resolve - Resolve anomaly
-router.post('/:id/resolve', (req, res) => {
+router.post('/:id/resolve', async (req, res) => {
   try {
     const { user_id, resolution_notes, mark_as_false_alarm = false } = req.body;
 
     const status = mark_as_false_alarm ? 'false_alarm' : 'resolved';
 
-    db.prepare(`
-      UPDATE anomalies
-      SET status = ?, resolved_at = datetime('now'), resolved_by = ?, resolution_notes = ?
-      WHERE id = ?
-    `).run(status, user_id, resolution_notes, req.params.id);
+    await supabase
+      .from('anomalies')
+      .update({
+        status,
+        resolved_at: new Date().toISOString(),
+        resolved_by: user_id,
+        resolution_notes
+      })
+      .eq('id', req.params.id);
 
-    const anomaly = db.prepare('SELECT * FROM anomalies WHERE id = ?').get(req.params.id);
+    const { data: anomaly } = await supabase
+      .from('anomalies')
+      .select('*')
+      .eq('id', req.params.id)
+      .single();
+
     res.json({
       anomaly: {
         ...anomaly,
-        sensor_data: JSON.parse(anomaly.sensor_data || '{}')
+        sensor_data: anomaly.sensor_data || {}
       },
       message: mark_as_false_alarm ? 'Anomaly marked as false alarm' : 'Anomaly resolved'
     });

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { Brain, Plus, Search, Filter, Zap, GitBranch, AlertCircle } from 'lucide-react'
 import Modal from '../components/Modal'
+import Tooltip, { MODEL_TOOLTIPS } from '../components/Tooltip'
 
 const typeColors = {
   classification: 'bg-violet-100 text-violet-700 dark:bg-violet-900/50 dark:text-violet-400',
@@ -25,10 +26,8 @@ const modelTypes = [
 
 const useCases = [
   { value: 'predictive_maintenance', label: 'Predictive Maintenance' },
-  { value: 'quality_control', label: 'Quality Control' },
-  { value: 'energy_optimization', label: 'Energy Optimization' },
-  { value: 'process_optimization', label: 'Process Optimization' },
-  { value: 'anomaly_detection', label: 'Anomaly Detection' }
+  { value: 'quality_inspection', label: 'Quality Inspection' },
+  { value: 'process_optimization', label: 'Process Optimization' }
 ]
 
 export default function Models() {
@@ -127,7 +126,7 @@ export default function Models() {
               placeholder="Search models..."
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
-              className="input pl-10"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent pl-10"
             />
           </div>
           <button className="btn-secondary">
@@ -209,43 +208,49 @@ export default function Models() {
           )}
 
           <div>
-            <label htmlFor="name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Model Name *
-            </label>
+            <Tooltip content={MODEL_TOOLTIPS.modelName.content}>
+              <label htmlFor="name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Model Name *
+              </label>
+            </Tooltip>
             <input
               id="name"
               type="text"
               value={newModel.name}
               onChange={(e) => setNewModel({ ...newModel, name: e.target.value })}
-              className="input"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               placeholder="e.g., Equipment Failure Predictor"
               required
             />
           </div>
 
           <div>
-            <label htmlFor="description" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Description
-            </label>
+            <Tooltip content={MODEL_TOOLTIPS.description.content}>
+              <label htmlFor="description" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Description
+              </label>
+            </Tooltip>
             <textarea
               id="description"
               value={newModel.description}
               onChange={(e) => setNewModel({ ...newModel, description: e.target.value })}
-              className="input min-h-[80px]"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent min-h-[80px]"
               placeholder="Describe what this model does..."
               rows={3}
             />
           </div>
 
           <div>
-            <label htmlFor="model_type" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Model Type *
-            </label>
+            <Tooltip content={MODEL_TOOLTIPS.modelType.content}>
+              <label htmlFor="model_type" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Model Type *
+              </label>
+            </Tooltip>
             <select
               id="model_type"
               value={newModel.model_type}
               onChange={(e) => setNewModel({ ...newModel, model_type: e.target.value })}
-              className="input"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               required
             >
               {modelTypes.map((type) => (
@@ -257,14 +262,16 @@ export default function Models() {
           </div>
 
           <div>
-            <label htmlFor="target_use_case" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Target Use Case *
-            </label>
+            <Tooltip content={MODEL_TOOLTIPS.targetUseCase.content}>
+              <label htmlFor="target_use_case" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Target Use Case *
+              </label>
+            </Tooltip>
             <select
               id="target_use_case"
               value={newModel.target_use_case}
               onChange={(e) => setNewModel({ ...newModel, target_use_case: e.target.value })}
-              className="input"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               required
             >
               {useCases.map((uc) => (

@@ -27,8 +27,26 @@ export default function Dashboard() {
 
   async function fetchDashboardData() {
     try {
+      // DEBUG: Log the full URL being requested
+      const devicesUrl = '/api/devices'
+      console.log('[DEBUG] Fetching devices from:', devicesUrl)
+      console.log('[DEBUG] Window location:', window.location.href)
+      
       // Fetch devices
-      const devicesRes = await fetch('/api/devices')
+      const devicesRes = await fetch(devicesUrl)
+      console.log('[DEBUG] Devices response status:', devicesRes.status)
+      console.log('[DEBUG] Devices response headers:', Object.fromEntries(devicesRes.headers.entries()))
+      console.log('[DEBUG] Devices response URL:', devicesRes.url)
+      
+      // Check if response is actually JSON before parsing
+      const contentType = devicesRes.headers.get('content-type')
+      if (!contentType || !contentType.includes('application/json')) {
+        const textResponse = await devicesRes.text()
+        console.error('[DEBUG] Response is not JSON. Content-Type:', contentType)
+        console.error('[DEBUG] Response text:', textResponse)
+        throw new Error(`Server returned non-JSON response: ${textResponse}`)
+      }
+      
       const devicesData = await devicesRes.json()
 
       // Fetch models

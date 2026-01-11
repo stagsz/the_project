@@ -22,6 +22,7 @@ import aiRoutes from './routes/ai.js';
 import reportsRoutes from './routes/reports.js';
 import notificationsRoutes from './routes/notifications.js';
 import auditRoutes from './routes/audit.js';
+import processOptimizationRoutes from './routes/processOptimization.js';
 
 // Import WebSocket handlers
 import { setupWebSocket } from './services/websocket.js';
@@ -74,6 +75,7 @@ app.use('/api/ai', aiRoutes);
 app.use('/api/reports', reportsRoutes);
 app.use('/api/notifications', notificationsRoutes);
 app.use('/api/audit', auditRoutes);
+app.use('/api/process', processOptimizationRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {

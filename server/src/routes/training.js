@@ -1,38 +1,44 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
-import db from '../utils/db.js';
+import supabase from '../utils/supabase.js';
+import {
+  startTrainingRound,
+  getTrainingStatus,
+  cancelTrainingRound,
+  isTrainingActive
+} from '../services/trainingSimulator.js';
 
 const router = Router();
 
 // GET /api/training/rounds - List training rounds
-router.get('/rounds', (req, res) => {
+router.get('/rounds', async (req, res) => {
   try {
     const { model_id, status, limit = 50, offset = 0 } = req.query;
 
-    let query = `
-      SELECT tr.*, m.name as model_name, m.model_type
-      FROM training_rounds tr
-      JOIN models m ON tr.model_id = m.id
-      WHERE 1=1
-    `;
-    const params = [];
+    let query = supabase
+      .from('training_rounds')
+      .select('*, models(name, model_type)')
+      .order('created_at', { ascending: false })
+      .range(parseInt(offset), parseInt(offset) + parseInt(limit) - 1);
 
-    if (model_id) { query += ' AND tr.model_id = ?'; params.push(model_id); }
-    if (status) { query += ' AND tr.status = ?'; params.push(status); }
+    if (model_id) query = query.eq('model_id', model_id);
+    if (status) query = query.eq('status', status);
 
-    query += ' ORDER BY tr.created_at DESC LIMIT ? OFFSET ?';
-    params.push(parseInt(limit), parseInt(offset));
+    const { data: rounds, error } = await query;
 
-    const rounds = db.prepare(query).all(...params);
+    if (error) throw error;
 
     res.json({
-      rounds: rounds.map(r => ({
+      rounds: (rounds || []).map(r => ({
         ...r,
-        target_devices: JSON.parse(r.target_devices || '[]'),
-        participating_devices: JSON.parse(r.participating_devices || '[]'),
-        hyperparameters: JSON.parse(r.hyperparameters || '{}'),
-        privacy_config: JSON.parse(r.privacy_config || '{}'),
-        result_metrics: JSON.parse(r.result_metrics || '{}')
+        model_name: r.models?.name || null,
+        model_type: r.models?.model_type || null,
+        models: undefined,
+        target_devices: r.target_devices || [],
+        participating_devices: r.participating_devices || [],
+        hyperparameters: r.hyperparameters || {},
+        privacy_config: r.privacy_config || {},
+        result_metrics: r.result_metrics || {}
       }))
     });
   } catch (error) {
@@ -42,7 +48,7 @@ router.get('/rounds', (req, res) => {
 });
 
 // POST /api/training/rounds - Start new training round
-router.post('/rounds', (req, res) => {
+router.post('/rounds', async (req, res) => {
   try {
     const {
       model_id,
@@ -58,53 +64,98 @@ router.post('/rounds', (req, res) => {
     }
 
     // Get next round number
-    const lastRound = db.prepare('SELECT MAX(round_number) as max_round FROM training_rounds WHERE model_id = ?').get(model_id);
-    const roundNumber = (lastRound.max_round || 0) + 1;
+    const { data: lastRoundData } = await supabase
+      .from('training_rounds')
+      .select('round_number')
+      .eq('model_id', model_id)
+      .order('round_number', { ascending: false })
+      .limit(1)
+      .single();
+
+    const roundNumber = (lastRoundData?.round_number || 0) + 1;
 
     const id = uuidv4();
-    db.prepare(`
-      INSERT INTO training_rounds (id, model_id, round_number, target_devices, hyperparameters, privacy_config, aggregation_method, created_by, status, started_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'in_progress', datetime('now'))
-    `).run(
-      id, model_id, roundNumber,
-      JSON.stringify(target_devices || []),
-      JSON.stringify(hyperparameters),
-      JSON.stringify(privacy_config),
-      aggregation_method,
-      created_by
-    );
+    const { error: insertError } = await supabase
+      .from('training_rounds')
+      .insert({
+        id,
+        model_id,
+        round_number: roundNumber,
+        target_devices: target_devices || [],
+        hyperparameters,
+        privacy_config,
+        aggregation_method,
+        created_by,
+        status: 'in_progress',
+        started_at: new Date().toISOString()
+      });
 
-    // Create device training contributions
-    const devices = target_devices || [];
+    if (insertError) throw insertError;
+
+    // Get devices for training
+    let devices = [...(target_devices || [])];
     if (devices.length === 0) {
       // Get all online devices
-      const onlineDevices = db.prepare('SELECT id FROM devices WHERE status = "online" AND is_active = 1').all();
-      devices.push(...onlineDevices.map(d => d.id));
+      const { data: onlineDevices } = await supabase
+        .from('devices')
+        .select('id')
+        .eq('status', 'online')
+        .eq('is_active', true);
+      devices = (onlineDevices || []).map(d => d.id);
     }
 
-    const contribStmt = db.prepare(`
-      INSERT INTO device_training_contributions (id, training_round_id, device_id, status)
-      VALUES (?, ?, ?, 'pending')
-    `);
+    // If still no devices, get any active devices
+    if (devices.length === 0) {
+      const { data: activeDevices } = await supabase
+        .from('devices')
+        .select('id')
+        .eq('is_active', true)
+        .limit(5);
+      devices = (activeDevices || []).map(d => d.id);
+    }
 
+    // Create device training contributions
     for (const deviceId of devices) {
-      contribStmt.run(uuidv4(), id, deviceId);
+      await supabase
+        .from('device_training_contributions')
+        .insert({
+          id: uuidv4(),
+          training_round_id: id,
+          device_id: deviceId,
+          status: 'pending'
+        });
     }
 
     // Update participating devices
-    db.prepare('UPDATE training_rounds SET participating_devices = ? WHERE id = ?').run(JSON.stringify(devices), id);
+    await supabase
+      .from('training_rounds')
+      .update({ participating_devices: devices })
+      .eq('id', id);
 
-    const round = db.prepare('SELECT * FROM training_rounds WHERE id = ?').get(id);
+    const { data: round } = await supabase
+      .from('training_rounds')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    // Start the actual training simulation
+    try {
+      await startTrainingRound(id);
+    } catch (trainError) {
+      console.error('Training start error:', trainError);
+      // Training will continue in background, don't fail the request
+    }
 
     res.status(201).json({
       round: {
         ...round,
-        target_devices: JSON.parse(round.target_devices || '[]'),
-        participating_devices: JSON.parse(round.participating_devices || '[]'),
-        hyperparameters: JSON.parse(round.hyperparameters || '{}'),
-        privacy_config: JSON.parse(round.privacy_config || '{}'),
-        result_metrics: JSON.parse(round.result_metrics || '{}')
-      }
+        target_devices: round.target_devices || [],
+        participating_devices: devices,
+        hyperparameters: round.hyperparameters || {},
+        privacy_config: round.privacy_config || {},
+        result_metrics: round.result_metrics || {}
+      },
+      message: 'Training round started. Subscribe to WebSocket topic for real-time updates.'
     });
   } catch (error) {
     console.error('Create training round error:', error);
@@ -113,37 +164,40 @@ router.post('/rounds', (req, res) => {
 });
 
 // GET /api/training/rounds/:id - Get training round details
-router.get('/rounds/:id', (req, res) => {
+router.get('/rounds/:id', async (req, res) => {
   try {
-    const round = db.prepare(`
-      SELECT tr.*, m.name as model_name, m.model_type
-      FROM training_rounds tr
-      JOIN models m ON tr.model_id = m.id
-      WHERE tr.id = ?
-    `).get(req.params.id);
+    const { data: round, error } = await supabase
+      .from('training_rounds')
+      .select('*, models(name, model_type)')
+      .eq('id', req.params.id)
+      .single();
 
-    if (!round) {
+    if (error || !round) {
       return res.status(404).json({ error: { message: 'Training round not found', code: 'NOT_FOUND' } });
     }
 
-    const contributions = db.prepare(`
-      SELECT dtc.*, d.name as device_name, d.device_uid
-      FROM device_training_contributions dtc
-      JOIN devices d ON dtc.device_id = d.id
-      WHERE dtc.training_round_id = ?
-    `).all(req.params.id);
+    const { data: contributions } = await supabase
+      .from('device_training_contributions')
+      .select('*, devices(name, device_uid)')
+      .eq('training_round_id', req.params.id);
 
     res.json({
       round: {
         ...round,
-        target_devices: JSON.parse(round.target_devices || '[]'),
-        participating_devices: JSON.parse(round.participating_devices || '[]'),
-        hyperparameters: JSON.parse(round.hyperparameters || '{}'),
-        privacy_config: JSON.parse(round.privacy_config || '{}'),
-        result_metrics: JSON.parse(round.result_metrics || '{}'),
-        contributions: contributions.map(c => ({
+        model_name: round.models?.name || null,
+        model_type: round.models?.model_type || null,
+        models: undefined,
+        target_devices: round.target_devices || [],
+        participating_devices: round.participating_devices || [],
+        hyperparameters: round.hyperparameters || {},
+        privacy_config: round.privacy_config || {},
+        result_metrics: round.result_metrics || {},
+        contributions: (contributions || []).map(c => ({
           ...c,
-          local_metrics: JSON.parse(c.local_metrics || '{}')
+          device_name: c.devices?.name || null,
+          device_uid: c.devices?.device_uid || null,
+          devices: undefined,
+          local_metrics: c.local_metrics || {}
         }))
       }
     });
@@ -154,7 +208,7 @@ router.get('/rounds/:id', (req, res) => {
 });
 
 // PUT /api/training/rounds/:id - Update training round (pause/resume)
-router.put('/rounds/:id', (req, res) => {
+router.put('/rounds/:id', async (req, res) => {
   try {
     const { status } = req.body;
 
@@ -162,17 +216,25 @@ router.put('/rounds/:id', (req, res) => {
       return res.status(400).json({ error: { message: 'Invalid status', code: 'VALIDATION_ERROR' } });
     }
 
-    db.prepare('UPDATE training_rounds SET status = ? WHERE id = ?').run(status, req.params.id);
+    await supabase
+      .from('training_rounds')
+      .update({ status })
+      .eq('id', req.params.id);
 
-    const round = db.prepare('SELECT * FROM training_rounds WHERE id = ?').get(req.params.id);
+    const { data: round } = await supabase
+      .from('training_rounds')
+      .select('*')
+      .eq('id', req.params.id)
+      .single();
+
     res.json({
       round: {
         ...round,
-        target_devices: JSON.parse(round.target_devices || '[]'),
-        participating_devices: JSON.parse(round.participating_devices || '[]'),
-        hyperparameters: JSON.parse(round.hyperparameters || '{}'),
-        privacy_config: JSON.parse(round.privacy_config || '{}'),
-        result_metrics: JSON.parse(round.result_metrics || '{}')
+        target_devices: round.target_devices || [],
+        participating_devices: round.participating_devices || [],
+        hyperparameters: round.hyperparameters || {},
+        privacy_config: round.privacy_config || {},
+        result_metrics: round.result_metrics || {}
       }
     });
   } catch (error) {
@@ -182,10 +244,25 @@ router.put('/rounds/:id', (req, res) => {
 });
 
 // DELETE /api/training/rounds/:id - Cancel training round
-router.delete('/rounds/:id', (req, res) => {
+router.delete('/rounds/:id', async (req, res) => {
   try {
-    db.prepare('UPDATE training_rounds SET status = "cancelled" WHERE id = ?').run(req.params.id);
-    db.prepare('UPDATE device_training_contributions SET status = "failed" WHERE training_round_id = ? AND status != "completed"').run(req.params.id);
+    // Cancel active training if running
+    const wasCancelled = cancelTrainingRound(req.params.id);
+
+    if (!wasCancelled) {
+      // Not actively running, just update DB
+      await supabase
+        .from('training_rounds')
+        .update({ status: 'cancelled' })
+        .eq('id', req.params.id);
+
+      await supabase
+        .from('device_training_contributions')
+        .update({ status: 'failed' })
+        .eq('training_round_id', req.params.id)
+        .neq('status', 'completed');
+    }
+
     res.json({ message: 'Training round cancelled' });
   } catch (error) {
     console.error('Cancel training round error:', error);
@@ -193,21 +270,62 @@ router.delete('/rounds/:id', (req, res) => {
   }
 });
 
-// GET /api/training/rounds/:id/contributions - Get device contributions
-router.get('/rounds/:id/contributions', (req, res) => {
+// GET /api/training/rounds/:id/status - Get real-time training status
+router.get('/rounds/:id/status', async (req, res) => {
   try {
-    const contributions = db.prepare(`
-      SELECT dtc.*, d.name as device_name, d.device_uid, d.type as device_type
-      FROM device_training_contributions dtc
-      JOIN devices d ON dtc.device_id = d.id
-      WHERE dtc.training_round_id = ?
-      ORDER BY dtc.upload_timestamp DESC
-    `).all(req.params.id);
+    // Check if training is actively running
+    const liveStatus = getTrainingStatus(req.params.id);
+
+    if (liveStatus) {
+      return res.json({
+        isActive: true,
+        ...liveStatus
+      });
+    }
+
+    // Get from database
+    const { data: round, error } = await supabase
+      .from('training_rounds')
+      .select('status, started_at, completed_at')
+      .eq('id', req.params.id)
+      .single();
+
+    if (error || !round) {
+      return res.status(404).json({ error: { message: 'Training round not found', code: 'NOT_FOUND' } });
+    }
 
     res.json({
-      contributions: contributions.map(c => ({
+      isActive: false,
+      roundId: req.params.id,
+      status: round.status,
+      startedAt: round.started_at,
+      completedAt: round.completed_at
+    });
+  } catch (error) {
+    console.error('Get training status error:', error);
+    res.status(500).json({ error: { message: 'Failed to get training status', code: 'STATUS_ERROR' } });
+  }
+});
+
+// GET /api/training/rounds/:id/contributions - Get device contributions
+router.get('/rounds/:id/contributions', async (req, res) => {
+  try {
+    const { data: contributions, error } = await supabase
+      .from('device_training_contributions')
+      .select('*, devices(name, device_uid, type)')
+      .eq('training_round_id', req.params.id)
+      .order('upload_timestamp', { ascending: false });
+
+    if (error) throw error;
+
+    res.json({
+      contributions: (contributions || []).map(c => ({
         ...c,
-        local_metrics: JSON.parse(c.local_metrics || '{}')
+        device_name: c.devices?.name || null,
+        device_uid: c.devices?.device_uid || null,
+        device_type: c.devices?.type || null,
+        devices: undefined,
+        local_metrics: c.local_metrics || {}
       }))
     });
   } catch (error) {
@@ -217,66 +335,81 @@ router.get('/rounds/:id/contributions', (req, res) => {
 });
 
 // POST /api/training/rounds/:id/aggregate - Trigger aggregation
-router.post('/rounds/:id/aggregate', (req, res) => {
+router.post('/rounds/:id/aggregate', async (req, res) => {
   try {
     // Update round status to aggregating
-    db.prepare('UPDATE training_rounds SET status = "aggregating" WHERE id = ?').run(req.params.id);
+    await supabase
+      .from('training_rounds')
+      .update({ status: 'aggregating' })
+      .eq('id', req.params.id);
 
-    const round = db.prepare('SELECT * FROM training_rounds WHERE id = ?').get(req.params.id);
-    const contributions = db.prepare(`
-      SELECT * FROM device_training_contributions
-      WHERE training_round_id = ? AND status = 'completed'
-    `).all(req.params.id);
+    const { data: round } = await supabase
+      .from('training_rounds')
+      .select('*')
+      .eq('id', req.params.id)
+      .single();
+
+    const { data: contributions } = await supabase
+      .from('device_training_contributions')
+      .select('*')
+      .eq('training_round_id', req.params.id)
+      .eq('status', 'completed');
 
     // Simulate aggregation (in real system, this would aggregate model weights)
     const aggregatedMetrics = {
       accuracy: 0.85 + Math.random() * 0.1,
       loss: 0.2 + Math.random() * 0.1,
       f1_score: 0.83 + Math.random() * 0.1,
-      participating_devices: contributions.length,
-      total_samples: contributions.reduce((sum, c) => sum + (c.data_samples_count || 0), 0)
+      participating_devices: (contributions || []).length,
+      total_samples: (contributions || []).reduce((sum, c) => sum + (c.data_samples_count || 0), 0)
     };
 
     // Update round as completed
-    db.prepare(`
-      UPDATE training_rounds
-      SET status = 'completed', result_metrics = ?, completed_at = datetime('now')
-      WHERE id = ?
-    `).run(JSON.stringify(aggregatedMetrics), req.params.id);
+    await supabase
+      .from('training_rounds')
+      .update({
+        status: 'completed',
+        result_metrics: aggregatedMetrics,
+        completed_at: new Date().toISOString()
+      })
+      .eq('id', req.params.id);
 
-    // Create new model version
-    const versionId = uuidv4();
-    const lastVersion = db.prepare(`
-      SELECT version FROM model_versions WHERE model_id = ? ORDER BY created_at DESC LIMIT 1
-    `).get(round.model_id);
+    // Get last version
+    const { data: lastVersion } = await supabase
+      .from('model_versions')
+      .select('version')
+      .eq('model_id', round.model_id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
 
     const newVersion = incrementVersion(lastVersion?.version || '0.0.0');
 
-    db.prepare(`
-      INSERT INTO model_versions (id, model_id, version, metrics, training_round_id, notes)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(
-      versionId,
-      round.model_id,
-      newVersion,
-      JSON.stringify(aggregatedMetrics),
-      req.params.id,
-      `Aggregated from training round ${round.round_number}`
-    );
+    // Create new model version
+    const versionId = uuidv4();
+    await supabase
+      .from('model_versions')
+      .insert({
+        id: versionId,
+        model_id: round.model_id,
+        version: newVersion,
+        metrics: aggregatedMetrics,
+        training_round_id: req.params.id,
+        notes: `Aggregated from training round ${round.round_number}`
+      });
 
     // Log privacy budget
-    const privacyConfig = JSON.parse(round.privacy_config || '{}');
-    db.prepare(`
-      INSERT INTO privacy_budget_logs (id, model_id, training_round_id, epsilon_consumed, cumulative_epsilon, budget_limit)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(
-      uuidv4(),
-      round.model_id,
-      req.params.id,
-      privacyConfig.epsilon || 1.0,
-      privacyConfig.epsilon || 1.0, // Would accumulate in real system
-      10.0 // Default budget limit
-    );
+    const privacyConfig = round.privacy_config || {};
+    await supabase
+      .from('privacy_budget_logs')
+      .insert({
+        id: uuidv4(),
+        model_id: round.model_id,
+        training_round_id: req.params.id,
+        epsilon_consumed: privacyConfig.epsilon || 1.0,
+        cumulative_epsilon: privacyConfig.epsilon || 1.0,
+        budget_limit: 10.0
+      });
 
     res.json({
       message: 'Aggregation completed',
@@ -291,20 +424,21 @@ router.post('/rounds/:id/aggregate', (req, res) => {
 });
 
 // GET /api/training/rounds/:id/metrics - Get round metrics over time
-router.get('/rounds/:id/metrics', (req, res) => {
+router.get('/rounds/:id/metrics', async (req, res) => {
   try {
-    const contributions = db.prepare(`
-      SELECT dtc.*, d.name as device_name
-      FROM device_training_contributions dtc
-      JOIN devices d ON dtc.device_id = d.id
-      WHERE dtc.training_round_id = ? AND dtc.status = 'completed'
-      ORDER BY dtc.upload_timestamp
-    `).all(req.params.id);
+    const { data: contributions, error } = await supabase
+      .from('device_training_contributions')
+      .select('*, devices(name)')
+      .eq('training_round_id', req.params.id)
+      .eq('status', 'completed')
+      .order('upload_timestamp');
 
-    const metrics = contributions.map(c => ({
-      device: c.device_name,
+    if (error) throw error;
+
+    const metrics = (contributions || []).map(c => ({
+      device: c.devices?.name || 'Unknown',
       timestamp: c.upload_timestamp,
-      ...JSON.parse(c.local_metrics || '{}')
+      ...(c.local_metrics || {})
     }));
 
     res.json({ metrics });

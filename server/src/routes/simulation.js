@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
-import db from '../utils/db.js';
+import supabase from '../utils/supabase.js';
 
 const router = Router();
 
@@ -8,15 +8,11 @@ const DEVICE_TYPES = ['edge_compute', 'sensor_gateway', 'plc', 'camera'];
 const DEVICE_PREFIXES = ['EC', 'SG', 'PLC', 'CAM'];
 
 // POST /api/simulation/devices - Create simulated devices
-router.post('/devices', (req, res) => {
+router.post('/devices', async (req, res) => {
   try {
     const { count = 5, device_group_id, type } = req.body;
 
     const createdDevices = [];
-    const stmt = db.prepare(`
-      INSERT INTO devices (id, device_group_id, device_uid, name, type, status, ip_address, firmware_version, capabilities, is_simulated)
-      VALUES (?, ?, ?, ?, ?, 'online', ?, ?, ?, 1)
-    `);
 
     for (let i = 0; i < count; i++) {
       const deviceType = type || DEVICE_TYPES[Math.floor(Math.random() * DEVICE_TYPES.length)];
@@ -34,7 +30,21 @@ router.post('/devices', (req, res) => {
         protocols: ['mqtt', 'http']
       };
 
-      stmt.run(id, device_group_id, uid, name, deviceType, ip, firmware, JSON.stringify(capabilities));
+      await supabase
+        .from('devices')
+        .insert({
+          id,
+          device_group_id,
+          device_uid: uid,
+          name,
+          type: deviceType,
+          status: 'online',
+          ip_address: ip,
+          firmware_version: firmware,
+          capabilities,
+          is_simulated: true
+        });
+
       createdDevices.push({ id, uid, name, type: deviceType });
     }
 
@@ -46,7 +56,7 @@ router.post('/devices', (req, res) => {
 });
 
 // POST /api/simulation/metrics - Generate simulated metrics
-router.post('/metrics', (req, res) => {
+router.post('/metrics', async (req, res) => {
   try {
     const { device_id, count = 10, interval_minutes = 5 } = req.body;
 
@@ -55,15 +65,15 @@ router.post('/metrics', (req, res) => {
     if (device_id) {
       devices = [{ id: device_id }];
     } else {
-      devices = db.prepare('SELECT id FROM devices WHERE is_simulated = 1 AND is_active = 1').all();
+      const { data } = await supabase
+        .from('devices')
+        .select('id')
+        .eq('is_simulated', true)
+        .eq('is_active', true);
+      devices = data || [];
     }
 
     const createdMetrics = [];
-    const stmt = db.prepare(`
-      INSERT INTO device_metrics (id, device_id, timestamp, cpu_usage, memory_usage, temperature_celsius, network_latency_ms, error_count, sensor_readings)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
     const now = new Date();
 
     for (const device of devices) {
@@ -84,23 +94,28 @@ router.post('/metrics', (req, res) => {
           humidity: 30 + Math.random() * 40
         };
 
-        stmt.run(
-          id,
-          device.id,
-          timestamp.toISOString(),
-          cpuBase + Math.random() * 10 - 5,
-          memBase + Math.random() * 10 - 5,
-          tempBase + Math.random() * 5 - 2.5,
-          latencyBase + Math.random() * 10 - 5,
-          errorCount,
-          JSON.stringify(sensorReadings)
-        );
+        await supabase
+          .from('device_metrics')
+          .insert({
+            id,
+            device_id: device.id,
+            timestamp: timestamp.toISOString(),
+            cpu_usage: cpuBase + Math.random() * 10 - 5,
+            memory_usage: memBase + Math.random() * 10 - 5,
+            temperature_celsius: tempBase + Math.random() * 5 - 2.5,
+            network_latency_ms: latencyBase + Math.random() * 10 - 5,
+            error_count: errorCount,
+            sensor_readings: sensorReadings
+          });
 
         createdMetrics.push({ id, device_id: device.id, timestamp: timestamp.toISOString() });
       }
 
       // Update device last heartbeat
-      db.prepare('UPDATE devices SET last_heartbeat = datetime("now"), status = "online" WHERE id = ?').run(device.id);
+      await supabase
+        .from('devices')
+        .update({ last_heartbeat: new Date().toISOString(), status: 'online' })
+        .eq('id', device.id);
     }
 
     res.status(201).json({ metrics: createdMetrics, count: createdMetrics.length });
@@ -111,7 +126,7 @@ router.post('/metrics', (req, res) => {
 });
 
 // POST /api/simulation/training - Simulate training contribution
-router.post('/training', (req, res) => {
+router.post('/training', async (req, res) => {
   try {
     const { training_round_id, device_id } = req.body;
 
@@ -124,11 +139,13 @@ router.post('/training', (req, res) => {
     if (device_id) {
       devices = [{ id: device_id }];
     } else {
-      devices = db.prepare(`
-        SELECT d.id FROM devices d
-        JOIN device_training_contributions dtc ON d.id = dtc.device_id
-        WHERE dtc.training_round_id = ? AND dtc.status = 'pending'
-      `).all(training_round_id);
+      const { data } = await supabase
+        .from('device_training_contributions')
+        .select('device_id')
+        .eq('training_round_id', training_round_id)
+        .eq('status', 'pending');
+
+      devices = (data || []).map(d => ({ id: d.device_id }));
     }
 
     const updatedContributions = [];
@@ -143,21 +160,17 @@ router.post('/training', (req, res) => {
         samples_per_second: samples / duration
       };
 
-      db.prepare(`
-        UPDATE device_training_contributions
-        SET status = 'completed',
-            local_metrics = ?,
-            data_samples_count = ?,
-            training_duration_seconds = ?,
-            upload_timestamp = datetime('now')
-        WHERE training_round_id = ? AND device_id = ?
-      `).run(
-        JSON.stringify(localMetrics),
-        samples,
-        duration,
-        training_round_id,
-        device.id
-      );
+      await supabase
+        .from('device_training_contributions')
+        .update({
+          status: 'completed',
+          local_metrics: localMetrics,
+          data_samples_count: samples,
+          training_duration_seconds: duration,
+          upload_timestamp: new Date().toISOString()
+        })
+        .eq('training_round_id', training_round_id)
+        .eq('device_id', device.id);
 
       updatedContributions.push({
         device_id: device.id,
@@ -175,16 +188,26 @@ router.post('/training', (req, res) => {
 });
 
 // POST /api/simulation/anomaly - Inject simulated anomaly
-router.post('/anomaly', (req, res) => {
+router.post('/anomaly', async (req, res) => {
   try {
     const { device_id, anomaly_type, severity = 'warning' } = req.body;
 
     // If no device_id, pick a random device
     let targetDevice;
     if (device_id) {
-      targetDevice = db.prepare('SELECT id, name FROM devices WHERE id = ?').get(device_id);
+      const { data } = await supabase
+        .from('devices')
+        .select('id, name')
+        .eq('id', device_id)
+        .single();
+      targetDevice = data;
     } else {
-      targetDevice = db.prepare('SELECT id, name FROM devices WHERE is_active = 1 ORDER BY RANDOM() LIMIT 1').get();
+      const { data } = await supabase
+        .from('devices')
+        .select('id, name')
+        .eq('is_active', true)
+        .limit(1);
+      targetDevice = data?.[0];
     }
 
     if (!targetDevice) {
@@ -209,25 +232,28 @@ router.post('/anomaly', (req, res) => {
     };
 
     const id = uuidv4();
-    db.prepare(`
-      INSERT INTO anomalies (id, device_id, anomaly_type, severity, sensor_data, confidence_score, description)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      id,
-      targetDevice.id,
-      selectedType,
-      severity,
-      JSON.stringify(sensorData),
-      0.7 + Math.random() * 0.25,
-      descriptions[selectedType]
-    );
+    await supabase
+      .from('anomalies')
+      .insert({
+        id,
+        device_id: targetDevice.id,
+        anomaly_type: selectedType,
+        severity,
+        sensor_data: sensorData,
+        confidence_score: 0.7 + Math.random() * 0.25,
+        description: descriptions[selectedType]
+      });
 
-    const anomaly = db.prepare('SELECT * FROM anomalies WHERE id = ?').get(id);
+    const { data: anomaly } = await supabase
+      .from('anomalies')
+      .select('*')
+      .eq('id', id)
+      .single();
 
     res.status(201).json({
       anomaly: {
         ...anomaly,
-        sensor_data: JSON.parse(anomaly.sensor_data || '{}'),
+        sensor_data: anomaly.sensor_data || {},
         device_name: targetDevice.name
       }
     });
@@ -238,37 +264,60 @@ router.post('/anomaly', (req, res) => {
 });
 
 // DELETE /api/simulation/reset - Reset all simulated data
-router.delete('/reset', (req, res) => {
+router.delete('/reset', async (req, res) => {
   try {
     const { keep_devices = false } = req.query;
 
-    // Delete simulated anomalies
-    const anomalyResult = db.prepare(`
-      DELETE FROM anomalies WHERE device_id IN (SELECT id FROM devices WHERE is_simulated = 1)
-    `).run();
+    // Get simulated device IDs
+    const { data: simulatedDevices } = await supabase
+      .from('devices')
+      .select('id')
+      .eq('is_simulated', true);
 
-    // Delete simulated metrics
-    const metricsResult = db.prepare(`
-      DELETE FROM device_metrics WHERE device_id IN (SELECT id FROM devices WHERE is_simulated = 1)
-    `).run();
+    const deviceIds = (simulatedDevices || []).map(d => d.id);
 
-    // Delete simulated training contributions
-    const contribResult = db.prepare(`
-      DELETE FROM device_training_contributions WHERE device_id IN (SELECT id FROM devices WHERE is_simulated = 1)
-    `).run();
-
+    let anomaliesDeleted = 0;
+    let metricsDeleted = 0;
+    let contribDeleted = 0;
     let devicesDeleted = 0;
-    if (!keep_devices) {
-      const deviceResult = db.prepare('DELETE FROM devices WHERE is_simulated = 1').run();
-      devicesDeleted = deviceResult.changes;
+
+    if (deviceIds.length > 0) {
+      // Delete simulated anomalies
+      const { count: anomalyCount } = await supabase
+        .from('anomalies')
+        .delete()
+        .in('device_id', deviceIds)
+        .select('*', { count: 'exact', head: true });
+      anomaliesDeleted = anomalyCount || 0;
+
+      // Actually delete them
+      await supabase.from('anomalies').delete().in('device_id', deviceIds);
+
+      // Delete simulated metrics
+      await supabase.from('device_metrics').delete().in('device_id', deviceIds);
+
+      // Delete simulated training contributions
+      await supabase.from('device_training_contributions').delete().in('device_id', deviceIds);
+
+      if (!keep_devices) {
+        // Delete simulated devices
+        const { error } = await supabase
+          .from('devices')
+          .delete()
+          .eq('is_simulated', true);
+
+        if (!error) {
+          devicesDeleted = deviceIds.length;
+        }
+      }
     }
 
     res.json({
       message: 'Simulation data reset',
       deleted: {
-        anomalies: anomalyResult.changes,
-        metrics: metricsResult.changes,
-        contributions: contribResult.changes,
+        anomalies: anomaliesDeleted,
+        metrics: metricsDeleted,
+        contributions: contribDeleted,
         devices: devicesDeleted
       }
     });

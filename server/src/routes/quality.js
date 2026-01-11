@@ -1,32 +1,36 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
-import db from '../utils/db.js';
+import supabase from '../utils/supabase.js';
 
 const router = Router();
 
 // GET /api/quality/inspections - List quality inspections
-router.get('/inspections', (req, res) => {
+router.get('/inspections', async (req, res) => {
   try {
     const { device_id, result, defect_type, limit = 50, offset = 0 } = req.query;
 
-    let query = `
-      SELECT qi.*, d.name as device_name, d.device_uid
-      FROM quality_inspections qi
-      JOIN devices d ON qi.device_id = d.id
-      WHERE 1=1
-    `;
-    const params = [];
+    let query = supabase
+      .from('quality_inspections')
+      .select('*, devices(name, device_uid)')
+      .order('inspection_timestamp', { ascending: false })
+      .range(parseInt(offset), parseInt(offset) + parseInt(limit) - 1);
 
-    if (device_id) { query += ' AND qi.device_id = ?'; params.push(device_id); }
-    if (result) { query += ' AND qi.result = ?'; params.push(result); }
-    if (defect_type) { query += ' AND qi.defect_type = ?'; params.push(defect_type); }
+    if (device_id) query = query.eq('device_id', device_id);
+    if (result) query = query.eq('result', result);
+    if (defect_type) query = query.eq('defect_type', defect_type);
 
-    query += ' ORDER BY qi.inspection_timestamp DESC LIMIT ? OFFSET ?';
-    params.push(parseInt(limit), parseInt(offset));
+    const { data: inspections, error } = await query;
 
-    const inspections = db.prepare(query).all(...params);
+    if (error) throw error;
 
-    res.json({ inspections });
+    res.json({
+      inspections: (inspections || []).map(i => ({
+        ...i,
+        device_name: i.devices?.name || null,
+        device_uid: i.devices?.device_uid || null,
+        devices: undefined
+      }))
+    });
   } catch (error) {
     console.error('List inspections error:', error);
     res.status(500).json({ error: { message: 'Failed to list inspections', code: 'LIST_ERROR' } });
@@ -34,25 +38,31 @@ router.get('/inspections', (req, res) => {
 });
 
 // GET /api/quality/inspections/:id - Get inspection details
-router.get('/inspections/:id', (req, res) => {
+router.get('/inspections/:id', async (req, res) => {
   try {
-    const inspection = db.prepare(`
-      SELECT qi.*, d.name as device_name, d.device_uid, d.type as device_type,
-             dg.name as group_name, f.name as facility_name,
-             u.name as override_by_name
-      FROM quality_inspections qi
-      JOIN devices d ON qi.device_id = d.id
-      LEFT JOIN device_groups dg ON d.device_group_id = dg.id
-      LEFT JOIN facilities f ON dg.facility_id = f.id
-      LEFT JOIN users u ON qi.override_by = u.id
-      WHERE qi.id = ?
-    `).get(req.params.id);
+    const { data: inspection, error } = await supabase
+      .from('quality_inspections')
+      .select('*, devices(name, device_uid, type, device_group_id, device_groups(name, facility_id, facilities(name))), users:override_by(name)')
+      .eq('id', req.params.id)
+      .single();
 
-    if (!inspection) {
+    if (error || !inspection) {
       return res.status(404).json({ error: { message: 'Inspection not found', code: 'NOT_FOUND' } });
     }
 
-    res.json({ inspection });
+    res.json({
+      inspection: {
+        ...inspection,
+        device_name: inspection.devices?.name || null,
+        device_uid: inspection.devices?.device_uid || null,
+        device_type: inspection.devices?.type || null,
+        group_name: inspection.devices?.device_groups?.name || null,
+        facility_name: inspection.devices?.device_groups?.facilities?.name || null,
+        override_by_name: inspection.users?.name || null,
+        devices: undefined,
+        users: undefined
+      }
+    });
   } catch (error) {
     console.error('Get inspection error:', error);
     res.status(500).json({ error: { message: 'Failed to get inspection', code: 'GET_ERROR' } });
@@ -60,7 +70,7 @@ router.get('/inspections/:id', (req, res) => {
 });
 
 // POST /api/quality/inspections/:id/override - Human override result
-router.post('/inspections/:id/override', (req, res) => {
+router.post('/inspections/:id/override', async (req, res) => {
   try {
     const { override_result, override_by, notes } = req.body;
 
@@ -68,13 +78,22 @@ router.post('/inspections/:id/override', (req, res) => {
       return res.status(400).json({ error: { message: 'override_result is required', code: 'VALIDATION_ERROR' } });
     }
 
-    db.prepare(`
-      UPDATE quality_inspections
-      SET human_override = 1, override_result = ?, override_by = ?, notes = ?
-      WHERE id = ?
-    `).run(override_result, override_by, notes, req.params.id);
+    await supabase
+      .from('quality_inspections')
+      .update({
+        human_override: true,
+        override_result,
+        override_by,
+        notes
+      })
+      .eq('id', req.params.id);
 
-    const inspection = db.prepare('SELECT * FROM quality_inspections WHERE id = ?').get(req.params.id);
+    const { data: inspection } = await supabase
+      .from('quality_inspections')
+      .select('*')
+      .eq('id', req.params.id)
+      .single();
+
     res.json({ inspection, message: 'Override applied' });
   } catch (error) {
     console.error('Override inspection error:', error);
@@ -83,43 +102,91 @@ router.post('/inspections/:id/override', (req, res) => {
 });
 
 // GET /api/quality/metrics - Get quality metrics summary
-router.get('/metrics', (req, res) => {
+router.get('/metrics', async (req, res) => {
   try {
     const { device_id, from, to } = req.query;
 
-    let whereClause = '1=1';
-    const params = [];
+    // Build base query filters
+    let baseQuery = supabase.from('quality_inspections').select('*', { count: 'exact', head: true });
+    let passedQuery = supabase.from('quality_inspections').select('*', { count: 'exact', head: true }).eq('result', 'pass');
+    let failedQuery = supabase.from('quality_inspections').select('*', { count: 'exact', head: true }).eq('result', 'fail');
+    let warningQuery = supabase.from('quality_inspections').select('*', { count: 'exact', head: true }).eq('result', 'warning');
+    let overridesQuery = supabase.from('quality_inspections').select('*', { count: 'exact', head: true }).eq('human_override', true);
 
-    if (device_id) { whereClause += ' AND device_id = ?'; params.push(device_id); }
-    if (from) { whereClause += ' AND inspection_timestamp >= ?'; params.push(from); }
-    if (to) { whereClause += ' AND inspection_timestamp <= ?'; params.push(to); }
+    if (device_id) {
+      baseQuery = baseQuery.eq('device_id', device_id);
+      passedQuery = passedQuery.eq('device_id', device_id);
+      failedQuery = failedQuery.eq('device_id', device_id);
+      warningQuery = warningQuery.eq('device_id', device_id);
+      overridesQuery = overridesQuery.eq('device_id', device_id);
+    }
+    if (from) {
+      baseQuery = baseQuery.gte('inspection_timestamp', from);
+      passedQuery = passedQuery.gte('inspection_timestamp', from);
+      failedQuery = failedQuery.gte('inspection_timestamp', from);
+      warningQuery = warningQuery.gte('inspection_timestamp', from);
+      overridesQuery = overridesQuery.gte('inspection_timestamp', from);
+    }
+    if (to) {
+      baseQuery = baseQuery.lte('inspection_timestamp', to);
+      passedQuery = passedQuery.lte('inspection_timestamp', to);
+      failedQuery = failedQuery.lte('inspection_timestamp', to);
+      warningQuery = warningQuery.lte('inspection_timestamp', to);
+      overridesQuery = overridesQuery.lte('inspection_timestamp', to);
+    }
 
-    const total = db.prepare(`SELECT COUNT(*) as count FROM quality_inspections WHERE ${whereClause}`).get(...params);
-    const passed = db.prepare(`SELECT COUNT(*) as count FROM quality_inspections WHERE ${whereClause} AND result = 'pass'`).get(...params);
-    const failed = db.prepare(`SELECT COUNT(*) as count FROM quality_inspections WHERE ${whereClause} AND result = 'fail'`).get(...params);
-    const warning = db.prepare(`SELECT COUNT(*) as count FROM quality_inspections WHERE ${whereClause} AND result = 'warning'`).get(...params);
-    const overrides = db.prepare(`SELECT COUNT(*) as count FROM quality_inspections WHERE ${whereClause} AND human_override = 1`).get(...params);
+    const [totalResult, passedResult, failedResult, warningResult, overridesResult] = await Promise.all([
+      baseQuery,
+      passedQuery,
+      failedQuery,
+      warningQuery,
+      overridesQuery
+    ]);
 
-    const avgConfidence = db.prepare(`SELECT AVG(confidence_score) as avg FROM quality_inspections WHERE ${whereClause}`).get(...params);
+    const total = totalResult.count || 0;
+    const passed = passedResult.count || 0;
+    const failed = failedResult.count || 0;
+    const warning = warningResult.count || 0;
+    const overrides = overridesResult.count || 0;
+
+    // Get average confidence
+    let confidenceQuery = supabase.from('quality_inspections').select('confidence_score');
+    if (device_id) confidenceQuery = confidenceQuery.eq('device_id', device_id);
+    if (from) confidenceQuery = confidenceQuery.gte('inspection_timestamp', from);
+    if (to) confidenceQuery = confidenceQuery.lte('inspection_timestamp', to);
+
+    const { data: confidenceData } = await confidenceQuery;
+    const avgConfidence = confidenceData && confidenceData.length > 0
+      ? confidenceData.reduce((sum, c) => sum + (c.confidence_score || 0), 0) / confidenceData.length
+      : 0;
 
     // Get defect distribution
-    const defects = db.prepare(`
-      SELECT defect_type, COUNT(*) as count
-      FROM quality_inspections
-      WHERE ${whereClause} AND defect_type IS NOT NULL
-      GROUP BY defect_type
-      ORDER BY count DESC
-    `).all(...params);
+    let defectQuery = supabase.from('quality_inspections').select('defect_type').not('defect_type', 'is', null);
+    if (device_id) defectQuery = defectQuery.eq('device_id', device_id);
+    if (from) defectQuery = defectQuery.gte('inspection_timestamp', from);
+    if (to) defectQuery = defectQuery.lte('inspection_timestamp', to);
+
+    const { data: defectData } = await defectQuery;
+
+    // Count defects by type
+    const defectCounts = {};
+    (defectData || []).forEach(d => {
+      defectCounts[d.defect_type] = (defectCounts[d.defect_type] || 0) + 1;
+    });
+
+    const defects = Object.entries(defectCounts)
+      .map(([defect_type, count]) => ({ defect_type, count }))
+      .sort((a, b) => b.count - a.count);
 
     res.json({
       metrics: {
-        total: total.count,
-        passed: passed.count,
-        failed: failed.count,
-        warning: warning.count,
-        overrides: overrides.count,
-        pass_rate: total.count > 0 ? (passed.count / total.count * 100).toFixed(2) : 0,
-        average_confidence: avgConfidence.avg?.toFixed(4) || 0,
+        total,
+        passed,
+        failed,
+        warning,
+        overrides,
+        pass_rate: total > 0 ? (passed / total * 100).toFixed(2) : 0,
+        average_confidence: avgConfidence.toFixed(4),
         defect_distribution: defects
       }
     });
@@ -130,52 +197,64 @@ router.get('/metrics', (req, res) => {
 });
 
 // GET /api/quality/trends - Get quality trends over time
-router.get('/trends', (req, res) => {
+router.get('/trends', async (req, res) => {
   try {
     const { device_id, interval = 'day', limit = 30 } = req.query;
 
-    let dateFormat;
-    switch (interval) {
-      case 'hour':
-        dateFormat = '%Y-%m-%d %H:00:00';
-        break;
-      case 'week':
-        dateFormat = '%Y-%W';
-        break;
-      case 'month':
-        dateFormat = '%Y-%m';
-        break;
-      default:
-        dateFormat = '%Y-%m-%d';
-    }
+    // Supabase doesn't have strftime, so we'll need to process in JS
+    let query = supabase
+      .from('quality_inspections')
+      .select('inspection_timestamp, result, confidence_score')
+      .order('inspection_timestamp', { ascending: false })
+      .limit(parseInt(limit) * 100); // Get more records to aggregate
 
-    let query = `
-      SELECT
-        strftime('${dateFormat}', inspection_timestamp) as period,
-        COUNT(*) as total,
-        SUM(CASE WHEN result = 'pass' THEN 1 ELSE 0 END) as passed,
-        SUM(CASE WHEN result = 'fail' THEN 1 ELSE 0 END) as failed,
-        AVG(confidence_score) as avg_confidence
-      FROM quality_inspections
-    `;
-    const params = [];
+    if (device_id) query = query.eq('device_id', device_id);
 
-    if (device_id) {
-      query += ' WHERE device_id = ?';
-      params.push(device_id);
-    }
+    const { data: inspections, error } = await query;
 
-    query += ` GROUP BY period ORDER BY period DESC LIMIT ?`;
-    params.push(parseInt(limit));
+    if (error) throw error;
 
-    const trends = db.prepare(query).all(...params);
+    // Group by period
+    const groupByPeriod = (timestamp) => {
+      const date = new Date(timestamp);
+      switch (interval) {
+        case 'hour':
+          return `${date.toISOString().slice(0, 13)}:00:00`;
+        case 'week':
+          const weekNum = Math.ceil(date.getDate() / 7);
+          return `${date.getFullYear()}-W${weekNum.toString().padStart(2, '0')}`;
+        case 'month':
+          return date.toISOString().slice(0, 7);
+        default: // day
+          return date.toISOString().slice(0, 10);
+      }
+    };
 
-    res.json({
-      trends: trends.map(t => ({
-        ...t,
-        pass_rate: t.total > 0 ? (t.passed / t.total * 100).toFixed(2) : 0
-      }))
+    const periodData = {};
+    (inspections || []).forEach(i => {
+      const period = groupByPeriod(i.inspection_timestamp);
+      if (!periodData[period]) {
+        periodData[period] = { total: 0, passed: 0, failed: 0, confidenceSum: 0 };
+      }
+      periodData[period].total++;
+      if (i.result === 'pass') periodData[period].passed++;
+      if (i.result === 'fail') periodData[period].failed++;
+      periodData[period].confidenceSum += i.confidence_score || 0;
     });
+
+    const trends = Object.entries(periodData)
+      .map(([period, data]) => ({
+        period,
+        total: data.total,
+        passed: data.passed,
+        failed: data.failed,
+        avg_confidence: data.total > 0 ? data.confidenceSum / data.total : 0,
+        pass_rate: data.total > 0 ? (data.passed / data.total * 100).toFixed(2) : 0
+      }))
+      .sort((a, b) => b.period.localeCompare(a.period))
+      .slice(0, parseInt(limit));
+
+    res.json({ trends });
   } catch (error) {
     console.error('Get trends error:', error);
     res.status(500).json({ error: { message: 'Failed to get trends', code: 'GET_ERROR' } });
@@ -183,12 +262,16 @@ router.get('/trends', (req, res) => {
 });
 
 // POST /api/quality/generate-inspections - Generate simulated inspections
-router.post('/generate-inspections', (req, res) => {
+router.post('/generate-inspections', async (req, res) => {
   try {
     const { count = 20 } = req.body;
 
-    const devices = db.prepare('SELECT id FROM devices WHERE type = "camera" OR is_active = 1').all();
-    if (devices.length === 0) {
+    const { data: devices } = await supabase
+      .from('devices')
+      .select('id')
+      .or('type.eq.camera,is_active.eq.true');
+
+    if (!devices || devices.length === 0) {
       return res.status(400).json({ error: { message: 'No devices available', code: 'NO_DEVICES' } });
     }
 
@@ -196,10 +279,6 @@ router.post('/generate-inspections', (req, res) => {
     const results = ['pass', 'pass', 'pass', 'pass', 'fail', 'warning']; // Weighted towards pass
 
     const createdInspections = [];
-    const stmt = db.prepare(`
-      INSERT INTO quality_inspections (id, device_id, inspection_timestamp, result, defect_type, confidence_score, image_reference)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `);
 
     for (let i = 0; i < count; i++) {
       const device = devices[Math.floor(Math.random() * devices.length)];
@@ -210,7 +289,17 @@ router.post('/generate-inspections', (req, res) => {
       const imageRef = `inspection_${Date.now()}_${i}.jpg`;
 
       const id = uuidv4();
-      stmt.run(id, device.id, timestamp, result, defect, confidence, imageRef);
+      await supabase
+        .from('quality_inspections')
+        .insert({
+          id,
+          device_id: device.id,
+          inspection_timestamp: timestamp,
+          result,
+          defect_type: defect,
+          confidence_score: confidence,
+          image_reference: imageRef
+        });
 
       createdInspections.push({ id, result, defect_type: defect });
     }

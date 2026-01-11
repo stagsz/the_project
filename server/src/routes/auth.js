@@ -1,11 +1,11 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
-import db from '../utils/db.js';
+import supabase from '../utils/supabase.js';
 
 const router = Router();
 
 // POST /api/auth/register - Create new user
-router.post('/register', (req, res) => {
+router.post('/register', async (req, res) => {
   try {
     const { email, name, password, role = 'viewer' } = req.body;
 
@@ -13,31 +13,54 @@ router.post('/register', (req, res) => {
       return res.status(400).json({ error: { message: 'Email, name, and password are required', code: 'VALIDATION_ERROR' } });
     }
 
-    const existingUser = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
+    const { data: existingUser } = await supabase
+      .from('users')
+      .select('id')
+      .eq('email', email)
+      .single();
+
     if (existingUser) {
       return res.status(409).json({ error: { message: 'User with this email already exists', code: 'USER_EXISTS' } });
     }
 
     const id = uuidv4();
-    const preferences = JSON.stringify({
+    const preferences = {
       theme: 'light',
       units: 'SI',
       timezone: 'UTC',
       dateFormat: 'YYYY-MM-DD',
       timeFormat: '24h'
-    });
+    };
 
-    db.prepare(`
-      INSERT INTO users (id, email, name, password_hash, role, preferences)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(id, email, name, password, role, preferences);
+    const { error: insertError } = await supabase
+      .from('users')
+      .insert({
+        id,
+        email,
+        name,
+        password_hash: password,
+        role,
+        preferences
+      });
 
-    const user = db.prepare('SELECT id, email, name, role, created_at, preferences FROM users WHERE id = ?').get(id);
+    if (insertError) {
+      throw insertError;
+    }
+
+    const { data: user, error: fetchError } = await supabase
+      .from('users')
+      .select('id, email, name, role, created_at, preferences')
+      .eq('id', id)
+      .single();
+
+    if (fetchError) {
+      throw fetchError;
+    }
 
     res.status(201).json({
       user: {
         ...user,
-        preferences: JSON.parse(user.preferences || '{}')
+        preferences: user.preferences || {}
       }
     });
   } catch (error) {
@@ -47,7 +70,7 @@ router.post('/register', (req, res) => {
 });
 
 // POST /api/auth/login - User login
-router.post('/login', (req, res) => {
+router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
 
@@ -55,14 +78,21 @@ router.post('/login', (req, res) => {
       return res.status(400).json({ error: { message: 'Email and password are required', code: 'VALIDATION_ERROR' } });
     }
 
-    const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', email)
+      .single();
 
-    if (!user || user.password_hash !== password) {
+    if (error || !user || user.password_hash !== password) {
       return res.status(401).json({ error: { message: 'Invalid credentials', code: 'INVALID_CREDENTIALS' } });
     }
 
     // Update last login
-    db.prepare("UPDATE users SET last_login = datetime('now') WHERE id = ?").run(user.id);
+    await supabase
+      .from('users')
+      .update({ last_login: new Date().toISOString() })
+      .eq('id', user.id);
 
     // Simple token (in production, use JWT)
     const token = Buffer.from(`${user.id}:${Date.now()}`).toString('base64');
@@ -75,8 +105,8 @@ router.post('/login', (req, res) => {
         name: user.name,
         role: user.role,
         avatar_url: user.avatar_url,
-        preferences: JSON.parse(user.preferences || '{}'),
-        notification_settings: JSON.parse(user.notification_settings || '{}')
+        preferences: user.preferences || {},
+        notification_settings: user.notification_settings || {}
       }
     });
   } catch (error) {
@@ -91,7 +121,7 @@ router.post('/logout', (req, res) => {
 });
 
 // GET /api/auth/me - Get current user
-router.get('/me', (req, res) => {
+router.get('/me', async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -102,17 +132,21 @@ router.get('/me', (req, res) => {
     const decoded = Buffer.from(token, 'base64').toString('utf-8');
     const [userId] = decoded.split(':');
 
-    const user = db.prepare('SELECT id, email, name, role, avatar_url, created_at, last_login, preferences, notification_settings FROM users WHERE id = ?').get(userId);
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('id, email, name, role, avatar_url, created_at, last_login, preferences, notification_settings')
+      .eq('id', userId)
+      .single();
 
-    if (!user) {
+    if (error || !user) {
       return res.status(401).json({ error: { message: 'Invalid token', code: 'INVALID_TOKEN' } });
     }
 
     res.json({
       user: {
         ...user,
-        preferences: JSON.parse(user.preferences || '{}'),
-        notification_settings: JSON.parse(user.notification_settings || '{}')
+        preferences: user.preferences || {},
+        notification_settings: user.notification_settings || {}
       }
     });
   } catch (error) {
@@ -122,7 +156,7 @@ router.get('/me', (req, res) => {
 });
 
 // PUT /api/auth/profile - Update profile
-router.put('/profile', (req, res) => {
+router.put('/profile', async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -135,40 +169,41 @@ router.put('/profile', (req, res) => {
 
     const { name, avatar_url, preferences, notification_settings } = req.body;
 
-    const updates = [];
-    const params = [];
+    const updates = {};
 
-    if (name) {
-      updates.push('name = ?');
-      params.push(name);
-    }
-    if (avatar_url !== undefined) {
-      updates.push('avatar_url = ?');
-      params.push(avatar_url);
-    }
-    if (preferences) {
-      updates.push('preferences = ?');
-      params.push(JSON.stringify(preferences));
-    }
-    if (notification_settings) {
-      updates.push('notification_settings = ?');
-      params.push(JSON.stringify(notification_settings));
-    }
+    if (name) updates.name = name;
+    if (avatar_url !== undefined) updates.avatar_url = avatar_url;
+    if (preferences) updates.preferences = preferences;
+    if (notification_settings) updates.notification_settings = notification_settings;
 
-    if (updates.length === 0) {
+    if (Object.keys(updates).length === 0) {
       return res.status(400).json({ error: { message: 'No updates provided', code: 'NO_UPDATES' } });
     }
 
-    params.push(userId);
-    db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+    const { error: updateError } = await supabase
+      .from('users')
+      .update(updates)
+      .eq('id', userId);
 
-    const user = db.prepare('SELECT id, email, name, role, avatar_url, created_at, last_login, preferences, notification_settings FROM users WHERE id = ?').get(userId);
+    if (updateError) {
+      throw updateError;
+    }
+
+    const { data: user, error: fetchError } = await supabase
+      .from('users')
+      .select('id, email, name, role, avatar_url, created_at, last_login, preferences, notification_settings')
+      .eq('id', userId)
+      .single();
+
+    if (fetchError) {
+      throw fetchError;
+    }
 
     res.json({
       user: {
         ...user,
-        preferences: JSON.parse(user.preferences || '{}'),
-        notification_settings: JSON.parse(user.notification_settings || '{}')
+        preferences: user.preferences || {},
+        notification_settings: user.notification_settings || {}
       }
     });
   } catch (error) {

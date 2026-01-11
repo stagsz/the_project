@@ -1,0 +1,773 @@
+{
+  "project": "FedLearn Industrial",
+  "branchName": "ralph/fedlearn-platform",
+  "description": "Federated Learning Platform for Industrial IoT & Automation - Build a comprehensive federated learning management platform for industrial IoT environments with distributed machine learning, Claude AI integration, device fleet management, and real-time monitoring.",
+  "userStories": [
+    {
+      "id": "FLI-001",
+      "title": "Setup Express Server with SQLite Database",
+      "description": "As a developer, I need a Node.js/Express backend with SQLite database to store all application data including users, devices, models, and training rounds.",
+      "acceptanceCriteria": [
+        "Express server initialized with proper middleware (CORS, JSON parsing, error handling)",
+        "SQLite database created with better-sqlite3",
+        "All 15 database tables created per schema (users, facilities, device_groups, devices, device_metrics, models, model_versions, training_rounds, device_training_contributions, anomalies, maintenance_predictions, quality_inspections, model_deployments, notifications, audit_logs, privacy_budget_logs)",
+        "Database indexes added for foreign keys and commonly queried fields",
+        "Server starts successfully on configured port",
+        "Tests pass"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "Foundation step - all other features depend on this. Backend goes in /server directory."
+    },
+    {
+      "id": "FLI-002",
+      "title": "User Authentication and Role-Based Access",
+      "description": "As a user, I need to register, login, and manage my profile with role-based permissions (admin, operator, viewer).",
+      "acceptanceCriteria": [
+        "POST /api/auth/register endpoint creates new user",
+        "POST /api/auth/login endpoint authenticates user and returns session token",
+        "POST /api/auth/logout endpoint ends session",
+        "GET /api/auth/me endpoint returns current user profile",
+        "PUT /api/auth/profile endpoint updates user preferences (theme, units, timezone, date_format, time_format)",
+        "Password hashing implemented for security",
+        "Role-based middleware for admin/operator/viewer access control",
+        "Tests pass for all auth endpoints"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "Required before protected endpoints. Store user preferences as JSON field."
+    },
+    {
+      "id": "FLI-003",
+      "title": "Claude API Integration for AI Insights",
+      "description": "As a developer, I need Claude API integration to power AI insights, anomaly explanations, and natural language queries.",
+      "acceptanceCriteria": [
+        "Anthropic SDK installed and configured",
+        "API key loaded from /tmp/api-key file (referenced but not read directly)",
+        "Claude API client module created with error handling",
+        "Rate limiting implemented to prevent API abuse",
+        "Retry logic for failed API calls",
+        "Tests pass with mocked Claude responses"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "Core AI capability - needed for insights, anomaly explanation, and NL queries."
+    },
+    {
+      "id": "FLI-004",
+      "title": "WebSocket Server for Real-Time Updates",
+      "description": "As a user, I need real-time updates for device status, training progress, and anomaly notifications without page refresh.",
+      "acceptanceCriteria": [
+        "WebSocket server configured on Express",
+        "WS /ws/devices endpoint for real-time device status updates",
+        "WS /ws/training/:roundId endpoint for training progress",
+        "WS /ws/metrics/:deviceId endpoint for device metrics stream",
+        "WS /ws/anomalies endpoint for anomaly notifications",
+        "Connection authentication and authorization",
+        "Graceful disconnect handling",
+        "Tests pass for WebSocket connections"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "Critical for real-time dashboard experience. Support multiple concurrent connections."
+    },
+    {
+      "id": "FLI-005",
+      "title": "Database Seed Data and Simulation Infrastructure",
+      "description": "As a developer, I need sample data and simulation mode to test the application without real IoT devices.",
+      "acceptanceCriteria": [
+        "Seed script creates 2-3 sample facilities with locations and timezones",
+        "Create 4-5 device groups per facility (sensor, controller, gateway, compute_node types)",
+        "Default admin user created with proper preferences (SI units, UTC, 24-hour format, ISO 8601 dates)",
+        "Simulation mode toggle configuration added",
+        "Seed data script is idempotent (can run multiple times safely)",
+        "Tests pass for seed data creation"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "Enables development and demos. Set industrial formatting defaults: SI units, UTC, 24h time, ISO 8601 dates."
+    },
+    {
+      "id": "FLI-006",
+      "title": "Device Fleet Management API",
+      "description": "As an operator, I need to register, configure, and monitor edge devices in the fleet with grouping and status tracking.",
+      "acceptanceCriteria": [
+        "GET /api/devices endpoint lists devices with filters (group, status, facility)",
+        "POST /api/devices endpoint registers new device",
+        "GET /api/devices/:id endpoint returns device details",
+        "PUT /api/devices/:id endpoint updates device configuration",
+        "DELETE /api/devices/:id endpoint decommissions device",
+        "POST /api/devices/:id/heartbeat endpoint updates device status (for simulation)",
+        "GET /api/devices/:id/metrics endpoint returns device metrics history",
+        "POST /api/devices/bulk endpoint for bulk operations (update, restart, configure)",
+        "GET /api/device-groups endpoint lists device groups",
+        "POST /api/device-groups endpoint creates device group",
+        "PUT /api/device-groups/:id endpoint updates device group",
+        "Device status automatically set to offline if heartbeat missing >5 minutes",
+        "Tests pass for all device endpoints"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "Core fleet management. Support 100+ devices. Device types: edge_compute, sensor_gateway, plc, camera. Status: online/offline/warning/error/maintenance."
+    },
+    {
+      "id": "FLI-007",
+      "title": "Device Fleet Frontend with Real-Time Status",
+      "description": "As an operator, I need a visual interface to view and manage my device fleet with real-time status indicators and filtering.",
+      "acceptanceCriteria": [
+        "Device list page displays all devices with status indicators (colored dots: green=online, amber=warning, red=error/offline, gray=maintenance)",
+        "Filter devices by facility, zone, device group, status, and type",
+        "Device card component shows: device icon (Lucide Server/Cpu/Radio/Camera), name, UID, status, last heartbeat, CPU/memory/temp metrics",
+        "Device registration form with validation (UID, name, type, facility, group, capabilities)",
+        "Device details panel with metrics charts (CPU usage, memory usage, temperature over time)",
+        "Real-time status updates via WebSocket (no page refresh needed)",
+        "Device group tree view for hierarchical navigation",
+        "Quick action buttons on cards (configure, view, restart)",
+        "Use frontend-design plugin for component generation",
+        "NO EMOJIS - use Lucide icons only",
+        "Responsive layout works on desktop and tablet",
+        "Tests pass for device components"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "Use frontend-design plugin throughout. Desktop-first, control room optimized. Tailwind CSS via CDN. Icons from Lucide React."
+    },
+    {
+      "id": "FLI-008",
+      "title": "Model Management API with Versioning",
+      "description": "As a data scientist, I need to create, version, and manage ML model definitions with semantic versioning.",
+      "acceptanceCriteria": [
+        "GET /api/models endpoint lists all models",
+        "POST /api/models endpoint creates model definition",
+        "GET /api/models/:id endpoint returns model details",
+        "PUT /api/models/:id endpoint updates model",
+        "DELETE /api/models/:id endpoint deprecates model (soft delete)",
+        "GET /api/models/:id/versions endpoint lists model versions",
+        "GET /api/models/:id/versions/:versionId endpoint returns specific version",
+        "POST /api/models/:id/versions endpoint creates new version (from aggregation)",
+        "POST /api/models/:id/deploy endpoint deploys model version",
+        "POST /api/models/:id/rollback endpoint rolls back to previous version",
+        "Semantic versioning enforced (major.minor.patch format)",
+        "Model types supported: classification, regression, anomaly_detection, object_detection",
+        "Model status lifecycle: draft → active → deprecated",
+        "Tests pass for all model endpoints"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "Models stored as JSON (architecture, weights, schemas). Use cases: predictive_maintenance, quality_inspection, process_optimization."
+    },
+    {
+      "id": "FLI-009",
+      "title": "Model Management Frontend with Version History",
+      "description": "As a data scientist, I need a UI to create models, view version history, compare versions, and manage deployments.",
+      "acceptanceCriteria": [
+        "Model list page displays models with type icons (Brain, Layers, Target), status badges, performance metrics",
+        "Model creation form with architecture configuration (layers, parameters, input/output schemas)",
+        "Version history timeline component showing all versions with semver labels",
+        "Version comparison view showing metrics diff (accuracy, loss, F1 score)",
+        "Model performance metrics dashboard with charts (accuracy over versions, loss trends)",
+        "Model type color coding: Classification=Violet, Regression=Sky, Anomaly Detection=Orange, Object Detection=Pink",
+        "Export/import model functionality (JSON download/upload)",
+        "Use frontend-design plugin for forms and components",
+        "NO EMOJIS - use Lucide icons (Brain, GitBranch, Layers, Target, TrendingUp)",
+        "Responsive layout with card-based design",
+        "Tests pass for model components"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "Version history crucial for federated learning iterations. Plugin generates forms with validation UI."
+    },
+    {
+      "id": "FLI-010",
+      "title": "Training Orchestration API with Federated Averaging",
+      "description": "As an operator, I need to configure and run federated training rounds with device selection, hyperparameter tuning, and privacy controls.",
+      "acceptanceCriteria": [
+        "GET /api/training/rounds endpoint lists training rounds with filters (status, model, date)",
+        "POST /api/training/rounds endpoint starts new training round",
+        "GET /api/training/rounds/:id endpoint returns training round details",
+        "PUT /api/training/rounds/:id endpoint pauses/resumes training",
+        "DELETE /api/training/rounds/:id endpoint cancels training round",
+        "GET /api/training/rounds/:id/contributions endpoint returns device contributions",
+        "POST /api/training/rounds/:id/aggregate endpoint triggers aggregation manually",
+        "GET /api/training/rounds/:id/metrics endpoint returns round metrics over time",
+        "Federated averaging (FedAvg) algorithm implemented for aggregation",
+        "Weighted aggregation based on data volume per device",
+        "Device selection strategies: random, performance-based, availability",
+        "Hyperparameter support: learning_rate, batch_size, local_epochs",
+        "Differential privacy simulation with configurable epsilon (default: 1.0)",
+        "Training status: pending → in_progress → aggregating → completed/failed/cancelled",
+        "Automatic aggregation when threshold of devices complete (e.g., 80%)",
+        "Failed device handling with retry logic",
+        "Privacy budget tracking per model",
+        "Tests pass for training orchestration"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "Core federated learning logic. Simulation mode for local training. Real-time progress via WebSocket."
+    },
+    {
+      "id": "FLI-011",
+      "title": "Training Configuration Frontend with Real-Time Progress",
+      "description": "As an operator, I need a wizard to configure training rounds and a dashboard to monitor real-time progress.",
+      "acceptanceCriteria": [
+        "Training configuration wizard with steps: select model → choose devices → set hyperparameters → configure privacy → review → start",
+        "Device selector with multi-select, grouping by facility/zone, status indicators",
+        "Hyperparameter form with presets (conservative, balanced, aggressive) and custom inputs",
+        "Privacy epsilon input with validation (range 0.1-10.0)",
+        "Real-time training progress dashboard showing: round number, participating devices count (e.g., '12/20 devices'), progress bar, current phase (training/aggregating/complete), elapsed time, ETA",
+        "Live metrics charts updated via WebSocket (loss curve, accuracy over time)",
+        "Training history table with filters (status, model, date range)",
+        "Pause/resume/cancel controls with confirmation dialogs",
+        "Use frontend-design plugin for wizard and forms",
+        "Progress bar with ARIA attributes for accessibility",
+        "NO EMOJIS - use Lucide icons (Play, Pause, Stop, RotateCcw)",
+        "Tests pass for training UI components"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "Wizard simplifies complex configuration. Real-time updates critical for UX. Training round config should take <60 seconds."
+    },
+    {
+      "id": "FLI-012",
+      "title": "Device Simulation Engine for Testing",
+      "description": "As a developer, I need a simulation engine to generate realistic device metrics, training contributions, and anomalies without real hardware.",
+      "acceptanceCriteria": [
+        "POST /api/simulation/devices endpoint creates batch simulated devices",
+        "POST /api/simulation/metrics endpoint generates realistic device metrics (CPU, memory, temp, network latency)",
+        "POST /api/simulation/training endpoint simulates training contribution with local metrics",
+        "POST /api/simulation/anomaly endpoint injects anomalies for testing (sensor_drift, equipment_failure, quality_defect)",
+        "DELETE /api/simulation/reset endpoint clears all simulated data",
+        "Device simulator generates time-series metrics with realistic patterns (daily cycles, gradual drift)",
+        "Training simulation completes in realistic time (2-30 seconds per device)",
+        "Anomaly injection with configurable severity and type",
+        "Simulation control panel tracks active simulations",
+        "Configurable simulation parameters (metric ranges, anomaly frequency, training duration)",
+        "Tests pass for simulation engine"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "Essential for demos and development. Should handle 100+ simulated devices. Mark devices with is_simulated flag."
+    },
+    {
+      "id": "FLI-013",
+      "title": "Dashboard with Fleet Health Overview",
+      "description": "As an operator, I need a comprehensive dashboard showing fleet health, active training, recent anomalies, and quick actions.",
+      "acceptanceCriteria": [
+        "Fleet health overview cards: total devices, online/offline/warning/error counts, percentage healthy",
+        "Global model performance widget: accuracy, loss, convergence rate across all models",
+        "Active training rounds indicator with progress bars",
+        "Recent anomalies feed widget (last 10 anomalies) with severity indicators",
+        "Device geographic distribution (facility/zone view) with device counts",
+        "Training participation rate chart by device group",
+        "Model version deployment status (how many devices running each version)",
+        "Resource utilization charts: average CPU, memory, bandwidth across fleet",
+        "AI-generated operational insights summary panel",
+        "Quick action buttons: Start Training, Deploy Model, Acknowledge Alerts",
+        "Use frontend-design plugin for responsive grid layout",
+        "Real-time updates via WebSocket (no refresh needed)",
+        "Dashboard loads in <2 seconds",
+        "NO EMOJIS - use Lucide icons (LayoutDashboard, Activity, AlertTriangle, CheckCircle)",
+        "Tests pass for dashboard components"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "Main landing page. Control room optimized. Desktop-first responsive design. Use Recharts for visualizations."
+    },
+    {
+      "id": "FLI-014",
+      "title": "Anomaly Detection and Management System",
+      "description": "As an operator, I need to detect, investigate, and resolve anomalies with AI-powered explanations.",
+      "acceptanceCriteria": [
+        "GET /api/anomalies endpoint lists anomalies with filters (severity, status, device, type, date)",
+        "GET /api/anomalies/:id endpoint returns anomaly details with sensor data",
+        "PUT /api/anomalies/:id endpoint updates anomaly status",
+        "POST /api/anomalies/:id/acknowledge endpoint marks anomaly as acknowledged",
+        "POST /api/anomalies/:id/resolve endpoint resolves anomaly with notes",
+        "Anomaly detection simulation with types: sensor_drift, equipment_failure, quality_defect, process_deviation",
+        "Severity classification: info, warning, critical",
+        "Claude API integration for anomaly explanation (AI-generated context and causes)",
+        "Anomaly correlation analysis across devices",
+        "Status workflow: new → acknowledged → investigating → resolved/false_alarm",
+        "Tests pass for anomaly API"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "AI explanation is key differentiator. Critical anomalies trigger immediate alerts."
+    },
+    {
+      "id": "FLI-015",
+      "title": "Anomaly Investigation Frontend with AI Explanations",
+      "description": "As an operator, I need a UI to browse anomalies, view details, and get AI-powered explanations for investigation.",
+      "acceptanceCriteria": [
+        "Anomaly list with severity filtering and color coding (Critical=Rose-600, Warning=Amber-500, Info=Blue-400)",
+        "Anomaly row component shows: severity icon, type, device name, detection timestamp, confidence score badge, status pill",
+        "Anomaly detail view displays sensor data at detection time (JSON formatted)",
+        "'Get AI Explanation' button triggers Claude API call",
+        "AI explanation panel component displays context, possible causes, and recommendations",
+        "Anomaly acknowledgment workflow with user assignment",
+        "Resolution form with notes and false alarm option",
+        "Historical anomaly pattern view for device",
+        "Anomaly correlation view showing related anomalies across devices",
+        "Use frontend-design plugin for list and detail views",
+        "NO EMOJIS - use Lucide icons (AlertTriangle, XCircle, Info, CheckCircle)",
+        "Pulsing animation for critical unacknowledged anomalies",
+        "Tests pass for anomaly UI components"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "Investigation flow: notification → detail view → AI explanation → status update → resolution. WebSocket for real-time anomaly alerts."
+    },
+    {
+      "id": "FLI-016",
+      "title": "Predictive Maintenance System",
+      "description": "As a maintenance manager, I need failure predictions, maintenance scheduling, and cost analysis for equipment.",
+      "acceptanceCriteria": [
+        "GET /api/maintenance/predictions endpoint lists predictions with filters",
+        "GET /api/maintenance/predictions/:id endpoint returns prediction details",
+        "PUT /api/maintenance/predictions/:id endpoint updates prediction status",
+        "POST /api/maintenance/schedule endpoint schedules maintenance work",
+        "GET /api/maintenance/history endpoint returns maintenance history",
+        "Prediction types: failure, degradation, replacement_needed",
+        "Risk levels: low, medium, high, critical with color coding",
+        "Equipment health scoring (0-100 scale) based on sensor patterns",
+        "Component lifespan tracking (vibration, temperature, pressure analysis)",
+        "Cost-benefit analysis for maintenance actions",
+        "Prediction status: pending → scheduled → completed → dismissed",
+        "Tests pass for maintenance API"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": "AI-generated maintenance insights from Claude. Work order integration simulated."
+    },
+    {
+      "id": "FLI-017",
+      "title": "Predictive Maintenance Frontend with Timeline View",
+      "description": "As a maintenance manager, I need a UI to view predictions, schedule maintenance, and track costs.",
+      "acceptanceCriteria": [
+        "Maintenance prediction cards show: component, device, prediction type, predicted date, risk level, confidence score, recommended action, estimated cost",
+        "Maintenance timeline view with predictions plotted by date",
+        "Risk level indicators with color coding (Critical=Rose-600, High=Orange-500, Medium=Amber-500, Low=Green-500)",
+        "Cost projection charts (total maintenance costs over time, cost by facility)",
+        "Maintenance scheduling form with date picker and work order details",
+        "Maintenance history tracking with completion status",
+        "Filter by risk level, facility, component type",
+        "Use frontend-design plugin for cards and timeline",
+        "NO EMOJIS - use Lucide icons (Wrench, Calendar, DollarSign, TrendingUp)",
+        "Tests pass for maintenance UI components"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": "Timeline helps visualize maintenance schedule. Cost projections for budgeting."
+    },
+    {
+      "id": "FLI-018",
+      "title": "Quality Inspection System with Defect Tracking",
+      "description": "As a quality manager, I need to track inspection results, manage defect categories, and analyze quality trends.",
+      "acceptanceCriteria": [
+        "GET /api/quality/inspections endpoint lists inspections with filters",
+        "GET /api/quality/inspections/:id endpoint returns inspection details",
+        "POST /api/quality/inspections/:id/override endpoint allows human override",
+        "GET /api/quality/metrics endpoint returns quality metrics summary",
+        "GET /api/quality/trends endpoint returns quality trends over time",
+        "Inspection results: pass, fail, warning",
+        "Defect detection metrics: precision, recall, F1 score",
+        "Defect classification categories (configurable)",
+        "Human override workflow with approval tracking",
+        "False positive/negative tracking for model improvement",
+        "Cross-facility quality comparison",
+        "Quality control threshold configuration",
+        "Tests pass for quality API"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": "Visual inspection model management. Rare defect collaborative learning across facilities."
+    },
+    {
+      "id": "FLI-019",
+      "title": "Quality Inspection Frontend with Trend Analysis",
+      "description": "As a quality manager, I need a UI to review inspections, override results, and analyze quality trends.",
+      "acceptanceCriteria": [
+        "Inspection results table with columns: timestamp, device, result, defect type, confidence score, human override",
+        "Defect category management interface",
+        "Human override form with reason and approval flow",
+        "Quality trend charts: pass/fail rate over time, defect distribution by type, cross-facility comparison",
+        "Quality metrics dashboard: overall pass rate, precision/recall/F1, false positive rate",
+        "Filter by date range, facility, device, result",
+        "Use frontend-design plugin for table and charts",
+        "Result color coding: Pass=Green, Fail=Red, Warning=Amber",
+        "NO EMOJIS - use Lucide icons (Eye, CheckCircle, XCircle, AlertTriangle)",
+        "Tests pass for quality UI components"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": "Trend analysis helps identify systematic quality issues. Override feedback improves model."
+    },
+    {
+      "id": "FLI-020",
+      "title": "AI Insights and Natural Language Query System",
+      "description": "As an operator, I need to query the system using natural language and receive AI-generated insights and recommendations.",
+      "acceptanceCriteria": [
+        "POST /api/ai/query endpoint accepts natural language queries",
+        "GET /api/ai/insights endpoint returns AI-generated operational insights",
+        "POST /api/ai/explain-anomaly endpoint provides anomaly explanations",
+        "GET /api/ai/recommendations endpoint returns optimization suggestions",
+        "POST /api/ai/analyze-training endpoint analyzes training performance",
+        "Natural language query examples work: 'What devices are offline?', 'Show training performance last week', 'Which models need retraining?'",
+        "Claude API integration for all AI features",
+        "Query parsing and intent recognition",
+        "Context-aware responses based on user role and permissions",
+        "Insight categories: training recommendations, performance optimization, anomaly patterns, maintenance priorities",
+        "Tests pass with mocked Claude responses"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": "Natural language interface reduces learning curve. AI insights surface hidden patterns."
+    },
+    {
+      "id": "FLI-021",
+      "title": "AI Chat Interface with Insight History",
+      "description": "As an operator, I need a conversational interface to ask questions and bookmark useful insights.",
+      "acceptanceCriteria": [
+        "AI chat interface component with input box and message history",
+        "Query examples/suggestions for discoverability",
+        "Insight dashboard widget showing recent AI-generated insights",
+        "Insight categories displayed with icons and priorities",
+        "Insight bookmarking and history",
+        "Loading state while Claude API processes query",
+        "Error handling for failed queries",
+        "Use frontend-design plugin for chat interface",
+        "NO EMOJIS - use Lucide icons (MessageSquare, Lightbulb, Bookmark, Search)",
+        "Responsive design works on mobile for quick queries",
+        "Tests pass for AI UI components"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": "Chat interface should feel conversational. Bookmark feature captures valuable insights for team."
+    },
+    {
+      "id": "FLI-022",
+      "title": "Reports and Analytics System",
+      "description": "As a manager, I need comprehensive reports on training performance, device participation, model comparison, and privacy budget.",
+      "acceptanceCriteria": [
+        "GET /api/reports/training-performance endpoint returns training metrics over time",
+        "GET /api/reports/device-participation endpoint returns participation rates",
+        "GET /api/reports/model-comparison endpoint compares model versions",
+        "GET /api/reports/anomaly-frequency endpoint analyzes anomaly patterns",
+        "GET /api/reports/maintenance-costs endpoint projects maintenance costs",
+        "GET /api/reports/quality-summary endpoint returns quality metrics",
+        "GET /api/reports/privacy-budget endpoint tracks privacy budget consumption",
+        "GET /api/reports/export endpoint exports reports as PDF",
+        "Custom date range filtering for all reports",
+        "Scheduled report generation configuration",
+        "Tests pass for all report endpoints"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": "Reports critical for management visibility. PDF export for sharing and archival."
+    },
+    {
+      "id": "FLI-023",
+      "title": "Reports Frontend with Interactive Visualizations",
+      "description": "As a manager, I need interactive charts and visualizations to analyze system performance and trends.",
+      "acceptanceCriteria": [
+        "Training performance report: line charts showing accuracy/loss over time, convergence rates",
+        "Device participation heatmap: visual representation of device activity by time/facility",
+        "Model comparison charts: bar charts comparing accuracy, F1 score, deployment count",
+        "Anomaly frequency analysis: pie chart by type, line chart over time",
+        "Maintenance cost projections: line chart with forecasts, breakdown by facility",
+        "Quality metrics dashboard: trend lines, pass/fail rates, defect distribution",
+        "Privacy budget consumption: cumulative epsilon by model, warnings when approaching limit",
+        "Custom date range picker component (use date-fns for UTC support)",
+        "PDF export button on all reports",
+        "Use frontend-design plugin for responsive layouts",
+        "Use Recharts library for all visualizations",
+        "NO EMOJIS - use Lucide icons (BarChart3, PieChart, LineChart, Download)",
+        "Tests pass for report components"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": "Interactive charts built with Recharts. Date handling with date-fns. ISO 8601 date format default."
+    },
+    {
+      "id": "FLI-024",
+      "title": "Notification and Alert System",
+      "description": "As a user, I need to receive notifications for important events with configurable alert channels and escalation.",
+      "acceptanceCriteria": [
+        "GET /api/notifications endpoint lists notifications for current user",
+        "PUT /api/notifications/:id/read endpoint marks notification as read",
+        "PUT /api/notifications/read-all endpoint marks all as read",
+        "DELETE /api/notifications/:id endpoint deletes notification",
+        "Notification types: training_complete, device_offline, anomaly_detected, deployment_status, maintenance_alert",
+        "Severity levels: info, warning, error",
+        "Notification preferences stored per user (which types to receive)",
+        "Escalation rules configuration (e.g., critical anomalies auto-escalate after 5 minutes)",
+        "Email notification hooks (mocked for demo)",
+        "WebSocket push for real-time in-app notifications",
+        "Tests pass for notification system"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": "Critical for operational awareness. Real-time WebSocket push prevents missed alerts."
+    },
+    {
+      "id": "FLI-025",
+      "title": "Notification Center Frontend with Toast Alerts",
+      "description": "As a user, I need a notification center to view alerts and toast notifications for urgent events.",
+      "acceptanceCriteria": [
+        "Notification center panel accessible from header icon (bell icon with unread count badge)",
+        "Notification list shows: type, title, message, severity, timestamp, read/unread status",
+        "Toast notification component for urgent alerts (auto-dismiss after 5s for info, manual dismiss for warnings/errors)",
+        "Filter notifications by type and severity",
+        "Mark as read/unread actions",
+        "Delete notification action",
+        "Notification preferences form in settings",
+        "Toast notifications appear in top-right corner with slide-in animation",
+        "Use frontend-design plugin for notification UI patterns",
+        "NO EMOJIS - use Lucide icons (Bell, BellOff, Info, AlertTriangle, XCircle)",
+        "Severity color coding: Error=Rose-600, Warning=Amber-500, Info=Blue-400",
+        "Tests pass for notification UI components"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": "Toast alerts for immediate attention. Notification center for history. Desktop notifications optional."
+    },
+    {
+      "id": "FLI-026",
+      "title": "Audit Logging System",
+      "description": "As an admin, I need comprehensive audit logs for all user actions and system events for security and compliance.",
+      "acceptanceCriteria": [
+        "GET /api/audit/logs endpoint returns audit logs with filters",
+        "GET /api/audit/logs/:id endpoint returns audit log details",
+        "Filter by user, action type, entity type, date range",
+        "Action types logged: create, update, delete, deploy, start_training, acknowledge_anomaly, login, logout",
+        "Entity types tracked: model, device, training_round, anomaly, deployment, user, settings",
+        "Old and new values stored as JSON for change tracking",
+        "IP address and timestamp recorded for each action",
+        "System actions logged with null user_id",
+        "Audit log retention configurable (default: 90 days)",
+        "Tests pass for audit logging"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": "Critical for compliance (GDPR-style reporting). Immutable logs for security audit."
+    },
+    {
+      "id": "FLI-027",
+      "title": "Audit Log Viewer Frontend",
+      "description": "As an admin, I need a UI to browse audit logs, filter by criteria, and export for compliance reporting.",
+      "acceptanceCriteria": [
+        "Audit log viewer table with columns: timestamp, user, action, entity type, entity ID, IP address",
+        "Expandable row details showing old/new values diff",
+        "Filter by user, action type, entity type, date range",
+        "Search by entity ID or user email",
+        "Export filtered logs as CSV",
+        "Pagination for large result sets",
+        "Color coding by action type: Create=Green, Update=Blue, Delete=Red",
+        "Use frontend-design plugin for table patterns",
+        "NO EMOJIS - use Lucide icons (FileText, Search, Download, Filter)",
+        "Timestamps in ISO 8601 format (YYYY-MM-DD HH:mm:ss UTC)",
+        "Tests pass for audit UI components"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": "Admin-only feature. CSV export for compliance reporting. JSON diff visualization for changes."
+    },
+    {
+      "id": "FLI-028",
+      "title": "Model Deployment System with Rollout Strategies",
+      "description": "As an operator, I need to deploy model versions to device groups with strategies (full, canary, A/B testing) and rollback capability.",
+      "acceptanceCriteria": [
+        "Deployment types supported: full (all devices), canary (gradual rollout), a_b_test (split testing)",
+        "Deployment status tracking: pending → rolling_out → deployed/failed",
+        "Target device count and success/failure counts tracked",
+        "Rollback functionality to previous version",
+        "Deployment progress monitoring per device",
+        "Deployment impact analysis (how many devices affected)",
+        "Deployment history with audit trail",
+        "Failed deployment handling with error messages",
+        "Tests pass for deployment system"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": "Canary deployments reduce risk. A/B testing enables model comparison in production."
+    },
+    {
+      "id": "FLI-029",
+      "title": "Deployment Frontend with Wizard and Progress Tracking",
+      "description": "As an operator, I need a deployment wizard to configure rollouts and a dashboard to monitor deployment progress.",
+      "acceptanceCriteria": [
+        "Deployment wizard: select version → choose strategy → select device groups → review impact → confirm",
+        "Deployment strategy selector: Full (all at once), Canary (10%-50%-100%), A/B Test (50/50 split)",
+        "Device group selector with impact preview (X devices will be affected)",
+        "Deployment status dashboard showing: total devices, successful, failed, in-progress",
+        "Deployment progress bar with real-time updates",
+        "Per-device deployment status table",
+        "Rollback button with confirmation dialog",
+        "Deployment history table with filters",
+        "Use frontend-design plugin for wizard and dashboard",
+        "NO EMOJIS - use Lucide icons (Upload, TrendingUp, RotateCcw, CheckCircle, XCircle)",
+        "Tests pass for deployment UI components"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": "Wizard prevents deployment errors. Real-time progress via WebSocket. Rollback is safety net."
+    },
+    {
+      "id": "FLI-030",
+      "title": "Settings and Preferences Management",
+      "description": "As a user, I need to configure application preferences including theme, units, timezone, date/time formats, and notification settings.",
+      "acceptanceCriteria": [
+        "Settings page with sections: Appearance, Regional, Notifications, Privacy, System",
+        "Theme selection: Light, Dark, Auto (system preference)",
+        "Units configuration: SI (default) or Imperial",
+        "Time format: 24-hour (default) or 12-hour",
+        "Date format: ISO 8601 (YYYY-MM-DD, default) or US (MM/DD/YYYY) or EU (DD/MM/YYYY)",
+        "Timezone configuration: UTC (default) with local timezone display option",
+        "Default device group selection",
+        "Privacy defaults: differential privacy epsilon, noise multiplier",
+        "Notification preferences per type (in-app, email mock)",
+        "Dashboard layout customization (widget order and visibility)",
+        "API rate limiting configuration (admin only)",
+        "Session timeout settings (admin only)",
+        "Tests pass for settings API and UI"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": "Industrial focus: SI units, 24h time, ISO 8601 dates, UTC timezone as defaults. User preferences stored as JSON."
+    },
+    {
+      "id": "FLI-031",
+      "title": "Settings Frontend with Form Validation",
+      "description": "As a user, I need a settings interface to update preferences with proper validation and immediate preview.",
+      "acceptanceCriteria": [
+        "Settings page with tabbed sections: Appearance, Regional, Notifications, Privacy, System",
+        "Theme switcher with immediate preview (no save needed)",
+        "Units dropdown (SI/Imperial) with format examples",
+        "Time format radio buttons with preview (14:30:00 vs 2:30:00 PM)",
+        "Date format dropdown with preview (2026-01-11 vs 01/11/2026 vs 11/01/2026)",
+        "Timezone selector with search",
+        "Notification preferences toggles per notification type",
+        "Privacy settings form with epsilon validation (0.1-10.0 range)",
+        "Dashboard customization drag-and-drop (optional)",
+        "Save button with loading state",
+        "Success/error toast on save",
+        "Use frontend-design plugin for forms and validation UI",
+        "NO EMOJIS - use Lucide icons (Settings, Sun, Moon, Globe, Bell)",
+        "Tests pass for settings UI components"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": "Theme switcher updates immediately. Other settings require save. Validation prevents invalid configs."
+    },
+    {
+      "id": "FLI-032",
+      "title": "Accessibility Features Implementation",
+      "description": "As a user with accessibility needs, I need full keyboard navigation, screen reader support, and high contrast mode.",
+      "acceptanceCriteria": [
+        "Full keyboard navigation for all interactive elements",
+        "ARIA labels on all components",
+        "High contrast mode for industrial environments",
+        "Reduced motion support",
+        "Color blind friendly status indicators",
+        "Tests pass WCAG 2.1 AA compliance"
+      ],
+      "priority": 9,
+      "passes": false,
+      "notes": "Industrial environment requires high contrast. Plugin generates ARIA attributes automatically."
+    },
+    {
+      "id": "FLI-033",
+      "title": "Responsive Design for Multi-Device Support",
+      "description": "As a user, I need the application to work on desktop, tablet, and mobile devices.",
+      "acceptanceCriteria": [
+        "Desktop-first layout optimized for control room displays",
+        "Tablet support for field technicians",
+        "Mobile view focused on alerts and quick status",
+        "Touch-optimized controls",
+        "Collapsible sidebar navigation",
+        "Progressive Web App (PWA) support",
+        "Tests pass on all major browsers"
+      ],
+      "priority": 9,
+      "passes": false,
+      "notes": "Desktop-first approach. Mobile optimized for alerts."
+    },
+    {
+      "id": "FLI-034",
+      "title": "Dark Mode Implementation with Theme System",
+      "description": "As a user, I need a dark mode for control room environments with low ambient light.",
+      "acceptanceCriteria": [
+        "Dark mode color palette implemented per design system",
+        "Light mode color palette implemented",
+        "Theme toggle in header",
+        "Theme preference persists across sessions",
+        "All components support dark mode variants",
+        "Chart colors optimized for dark backgrounds",
+        "Use frontend-design plugin for dark mode patterns",
+        "Tests pass for theme switching"
+      ],
+      "priority": 9,
+      "passes": false,
+      "notes": "Dark mode essential for control rooms. Plugin generates dark mode class variants efficiently."
+    },
+    {
+      "id": "FLI-035",
+      "title": "Performance Optimization and Load Testing",
+      "description": "As a user, I need fast page loads, responsive interactions, and smooth real-time updates even with 100+ devices.",
+      "acceptanceCriteria": [
+        "Dashboard loads in under 2 seconds",
+        "WebSocket updates with <500ms latency",
+        "Database queries optimized with indexes",
+        "Pagination for large result sets",
+        "Debounced search inputs",
+        "Lazy loading for charts and large tables",
+        "Load testing with 100+ simulated devices",
+        "Memory leak testing for long-running WebSocket connections",
+        "Tests pass performance benchmarks"
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": "Critical for control room usability. Real-time updates must feel instant."
+    },
+    {
+      "id": "FLI-036",
+      "title": "Onboarding Flow with Simulation Setup",
+      "description": "As a new user, I need an onboarding flow to understand the platform and set up simulated data for exploration.",
+      "acceptanceCriteria": [
+        "Welcome screen with platform overview",
+        "Quick setup wizard for simulation mode",
+        "Auto-generate sample facilities, devices, models",
+        "Interactive tutorial highlighting key features",
+        "Demo training round walkthrough",
+        "Skip option for experienced users",
+        "Use frontend-design plugin for wizard",
+        "Tests pass for onboarding flow"
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": "Onboarding reduces learning curve. Simulation enables immediate exploration."
+    },
+    {
+      "id": "FLI-037",
+      "title": "Final Polish and Quality Assurance",
+      "description": "As a user, I need a polished, bug-free application with consistent design and proper error handling.",
+      "acceptanceCriteria": [
+        "All components use Lucide icons (NO EMOJIS verified)",
+        "Industrial formatting verified: timestamps (ISO 8601), metrics (engineering notation), temperatures (Celsius)",
+        "Consistent status color coding: Online=Emerald, Offline/Error=Rose, Warning=Amber, Info=Blue",
+        "Error boundaries for graceful failure handling",
+        "Comprehensive error messages with actionable guidance",
+        "Loading states for all async operations",
+        "Empty states with helpful messages",
+        "Confirmation dialogs for destructive actions",
+        "Form validation with clear error messages",
+        "Cross-browser testing (Chrome, Firefox, Safari, Edge)",
+        "End-to-end testing for critical workflows",
+        "All tests pass (unit, integration, e2e)"
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": "Final QA pass. Verify NO emojis anywhere. Test all workflows end-to-end."
+    }
+  ]
+}

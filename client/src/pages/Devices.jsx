@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { Server, Plus, Search, Filter, AlertCircle, Upload, Database, FileSpreadsheet, CheckCircle2, X } from 'lucide-react'
 import Modal from '../components/Modal'
+import Tooltip, { DEVICE_TOOLTIPS } from '../components/Tooltip'
 
 const statusColors = {
   online: 'bg-emerald-500',
@@ -55,7 +56,23 @@ export default function Devices() {
 
   async function fetchDevices() {
     try {
-      const res = await fetch('/api/devices')
+      const url = '/api/devices'
+      console.log('[DEBUG] Devices.jsx - Fetching devices from:', url)
+      console.log('[DEBUG] Devices.jsx - Window location:', window.location.href)
+      
+      const res = await fetch(url)
+      console.log('[DEBUG] Devices.jsx - Response status:', res.status)
+      console.log('[DEBUG] Devices.jsx - Response URL:', res.url)
+      console.log('[DEBUG] Devices.jsx - Content-Type:', res.headers.get('content-type'))
+      
+      // Check if response is JSON
+      const contentType = res.headers.get('content-type')
+      if (!contentType || !contentType.includes('application/json')) {
+        const textResponse = await res.text()
+        console.error('[DEBUG] Devices.jsx - Response is not JSON:', textResponse)
+        throw new Error(`Server returned non-JSON response: ${textResponse}`)
+      }
+      
       const data = await res.json()
       setDevices(data.devices || [])
     } catch (error) {
@@ -67,7 +84,21 @@ export default function Devices() {
 
   async function fetchDeviceGroups() {
     try {
-      const res = await fetch('/api/device-groups')
+      const url = '/api/device-groups'
+      console.log('[DEBUG] Devices.jsx - Fetching device groups from:', url)
+      
+      const res = await fetch(url)
+      console.log('[DEBUG] Devices.jsx - Device groups response status:', res.status)
+      console.log('[DEBUG] Devices.jsx - Content-Type:', res.headers.get('content-type'))
+      
+      // Check if response is JSON
+      const contentType = res.headers.get('content-type')
+      if (!contentType || !contentType.includes('application/json')) {
+        const textResponse = await res.text()
+        console.error('[DEBUG] Devices.jsx - Device groups response is not JSON:', textResponse)
+        throw new Error(`Server returned non-JSON response: ${textResponse}`)
+      }
+      
       const data = await res.json()
       setDeviceGroups(data.groups || [])
     } catch (error) {
@@ -166,8 +197,16 @@ export default function Devices() {
         })
 
         if (!res.ok) {
-          const data = await res.json()
-          throw new Error(data.error?.message || 'Failed to create simulated device')
+          let errorMessage = 'Failed to create simulated device'
+          try {
+            const data = await res.json()
+            errorMessage = data.error?.message || errorMessage
+          } catch {
+            if (res.status === 404) {
+              errorMessage = 'API endpoint not found. Please ensure the server is running.'
+            }
+          }
+          throw new Error(errorMessage)
         }
       } else {
         const res = await fetch('/api/devices', {
@@ -177,8 +216,16 @@ export default function Devices() {
         })
 
         if (!res.ok) {
-          const data = await res.json()
-          throw new Error(data.error?.message || 'Failed to create device')
+          let errorMessage = 'Failed to create device'
+          try {
+            const data = await res.json()
+            errorMessage = data.error?.message || errorMessage
+          } catch {
+            if (res.status === 404) {
+              errorMessage = 'API endpoint not found. Please ensure the server is running.'
+            }
+          }
+          throw new Error(errorMessage)
         }
       }
 
@@ -236,7 +283,7 @@ export default function Devices() {
               placeholder="Search devices..."
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
-              className="input pl-10"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent pl-10"
             />
           </div>
           <button className="btn-secondary">
@@ -317,39 +364,44 @@ export default function Devices() {
           )}
 
           <div>
-            <label htmlFor="name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Device Name *
-            </label>
+            <Tooltip content={DEVICE_TOOLTIPS.deviceName.content}>
+              <label htmlFor="name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Device Name *
+              </label>
+            </Tooltip>
             <input
               id="name"
               type="text"
               value={newDevice.name}
               onChange={(e) => setNewDevice({ ...newDevice, name: e.target.value })}
-              className="input"
-              placeholder="e.g., Production Line Sensor 1"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="e.g., CNC-Mill-Floor2"
               required
             />
           </div>
 
           <div>
-            <label htmlFor="device_uid" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Device UID
-            </label>
+            <Tooltip content={DEVICE_TOOLTIPS.deviceUID.content}>
+              <label htmlFor="device_uid" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Device UID
+              </label>
+            </Tooltip>
             <input
               id="device_uid"
               type="text"
               value={newDevice.device_uid}
               onChange={(e) => setNewDevice({ ...newDevice, device_uid: e.target.value })}
-              className="input font-mono"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono"
               placeholder="Leave blank to auto-generate"
             />
-            <p className="mt-1 text-xs text-gray-500">Unique identifier for the device. Leave blank to auto-generate.</p>
           </div>
 
           <div>
-            <label htmlFor="type" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Device Type *
-            </label>
+            <Tooltip content={DEVICE_TOOLTIPS.deviceType.content}>
+              <label htmlFor="type" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Device Type *
+              </label>
+            </Tooltip>
             <select
               id="type"
               value={newDevice.type}
@@ -359,7 +411,7 @@ export default function Devices() {
                   clearUploadedFile()
                 }
               }}
-              className="input"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               required
             >
               {deviceTypes.map((type) => (
@@ -373,9 +425,11 @@ export default function Devices() {
           {/* Dataset Upload Section - Only for Simulated Devices */}
           {newDevice.type === 'simulated' && (
             <div className="space-y-3">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                Dataset File *
-              </label>
+              <Tooltip content={DEVICE_TOOLTIPS.datasetFile.content}>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Dataset File *
+                </label>
+              </Tooltip>
 
               <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
                 <div className="flex items-start gap-2">
@@ -473,14 +527,16 @@ export default function Devices() {
           )}
 
           <div>
-            <label htmlFor="device_group_id" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Device Group
-            </label>
+            <Tooltip content={DEVICE_TOOLTIPS.deviceGroup.content}>
+              <label htmlFor="device_group_id" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Device Group
+              </label>
+            </Tooltip>
             <select
               id="device_group_id"
               value={newDevice.device_group_id}
               onChange={(e) => setNewDevice({ ...newDevice, device_group_id: e.target.value })}
-              className="input"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               <option value="">-- Select Group --</option>
               {deviceGroups.map((group) => (
@@ -492,29 +548,33 @@ export default function Devices() {
           </div>
 
           <div>
-            <label htmlFor="ip_address" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              IP Address
-            </label>
+            <Tooltip content={DEVICE_TOOLTIPS.ipAddress.content}>
+              <label htmlFor="ip_address" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                IP Address
+              </label>
+            </Tooltip>
             <input
               id="ip_address"
               type="text"
               value={newDevice.ip_address}
               onChange={(e) => setNewDevice({ ...newDevice, ip_address: e.target.value })}
-              className="input font-mono"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono"
               placeholder="e.g., 192.168.1.100"
             />
           </div>
 
           <div>
-            <label htmlFor="firmware_version" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Firmware Version
-            </label>
+            <Tooltip content={DEVICE_TOOLTIPS.firmwareVersion.content}>
+              <label htmlFor="firmware_version" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Firmware Version
+              </label>
+            </Tooltip>
             <input
               id="firmware_version"
               type="text"
               value={newDevice.firmware_version}
               onChange={(e) => setNewDevice({ ...newDevice, firmware_version: e.target.value })}
-              className="input font-mono"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono"
               placeholder="e.g., 1.0.0"
             />
           </div>

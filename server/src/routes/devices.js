@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
-import db from '../utils/db.js';
+import supabase from '../utils/supabase.js';
 
 const router = Router();
 
@@ -37,52 +37,55 @@ const upload = multer({
 });
 
 // GET /api/devices - List devices
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const { group, status, facility, limit = 100, offset = 0 } = req.query;
 
-    let query = `
-      SELECT d.*, dg.name as group_name, dg.zone, f.name as facility_name
-      FROM devices d
-      LEFT JOIN device_groups dg ON d.device_group_id = dg.id
-      LEFT JOIN facilities f ON dg.facility_id = f.id
-      WHERE d.is_active = 1
-    `;
-    const params = [];
+    let query = supabase
+      .from('devices')
+      .select('*, device_groups(name, zone, facility_id, facilities(name))')
+      .eq('is_active', true)
+      .order('name')
+      .range(parseInt(offset), parseInt(offset) + parseInt(limit) - 1);
 
     if (group) {
-      query += ' AND d.device_group_id = ?';
-      params.push(group);
+      query = query.eq('device_group_id', group);
     }
     if (status) {
-      query += ' AND d.status = ?';
-      params.push(status);
+      query = query.eq('status', status);
     }
+
+    const { data: devices, error } = await query;
+
+    if (error) throw error;
+
+    // Filter by facility if needed and transform data
+    let filteredDevices = devices || [];
     if (facility) {
-      query += ' AND dg.facility_id = ?';
-      params.push(facility);
+      filteredDevices = filteredDevices.filter(d => d.device_groups?.facility_id === facility);
     }
 
-    query += ' ORDER BY d.name LIMIT ? OFFSET ?';
-    params.push(parseInt(limit), parseInt(offset));
-
-    const devices = db.prepare(query).all(...params);
-
-    // Parse JSON fields
-    const parsedDevices = devices.map(d => ({
+    const parsedDevices = filteredDevices.map(d => ({
       ...d,
-      capabilities: JSON.parse(d.capabilities || '{}')
+      group_name: d.device_groups?.name || null,
+      zone: d.device_groups?.zone || null,
+      facility_name: d.device_groups?.facilities?.name || null,
+      capabilities: d.capabilities || {},
+      device_groups: undefined
     }));
 
     // Get total count
-    let countQuery = 'SELECT COUNT(*) as count FROM devices d WHERE d.is_active = 1';
-    const countParams = [];
-    if (group) { countQuery += ' AND d.device_group_id = ?'; countParams.push(group); }
-    if (status) { countQuery += ' AND d.status = ?'; countParams.push(status); }
+    let countQuery = supabase
+      .from('devices')
+      .select('*', { count: 'exact', head: true })
+      .eq('is_active', true);
 
-    const { count } = db.prepare(countQuery).get(...countParams);
+    if (group) countQuery = countQuery.eq('device_group_id', group);
+    if (status) countQuery = countQuery.eq('status', status);
 
-    res.json({ devices: parsedDevices, total: count });
+    const { count } = await countQuery;
+
+    res.json({ devices: parsedDevices, total: count || 0 });
   } catch (error) {
     console.error('List devices error:', error);
     res.status(500).json({ error: { message: 'Failed to list devices', code: 'LIST_ERROR' } });
@@ -90,7 +93,7 @@ router.get('/', (req, res) => {
 });
 
 // POST /api/devices - Register device
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   try {
     const { device_group_id, device_uid, name, type, ip_address, firmware_version, capabilities, is_simulated = false } = req.body;
 
@@ -98,22 +101,46 @@ router.post('/', (req, res) => {
       return res.status(400).json({ error: { message: 'device_uid, name, and type are required', code: 'VALIDATION_ERROR' } });
     }
 
-    const existingDevice = db.prepare('SELECT id FROM devices WHERE device_uid = ?').get(device_uid);
+    const { data: existingDevice } = await supabase
+      .from('devices')
+      .select('id')
+      .eq('device_uid', device_uid)
+      .single();
+
     if (existingDevice) {
       return res.status(409).json({ error: { message: 'Device with this UID already exists', code: 'DEVICE_EXISTS' } });
     }
 
     const id = uuidv4();
-    db.prepare(`
-      INSERT INTO devices (id, device_group_id, device_uid, name, type, ip_address, firmware_version, capabilities, is_simulated, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'offline')
-    `).run(id, device_group_id, device_uid, name, type, ip_address, firmware_version, JSON.stringify(capabilities || {}), is_simulated ? 1 : 0);
+    const { error: insertError } = await supabase
+      .from('devices')
+      .insert({
+        id,
+        device_group_id,
+        device_uid,
+        name,
+        type,
+        ip_address,
+        firmware_version,
+        capabilities: capabilities || {},
+        is_simulated,
+        status: 'offline'
+      });
 
-    const device = db.prepare('SELECT * FROM devices WHERE id = ?').get(id);
+    if (insertError) throw insertError;
+
+    const { data: device, error: fetchError } = await supabase
+      .from('devices')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (fetchError) throw fetchError;
+
     res.status(201).json({
       device: {
         ...device,
-        capabilities: JSON.parse(device.capabilities || '{}')
+        capabilities: device.capabilities || {}
       }
     });
   } catch (error) {
@@ -123,7 +150,7 @@ router.post('/', (req, res) => {
 });
 
 // POST /api/devices/simulated - Create simulated device with dataset upload
-router.post('/simulated', upload.single('dataset'), (req, res) => {
+router.post('/simulated', upload.single('dataset'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: { message: 'Dataset file is required', code: 'VALIDATION_ERROR' } });
@@ -140,7 +167,12 @@ router.post('/simulated', upload.single('dataset'), (req, res) => {
     }
 
     // Check if device already exists
-    const existingDevice = db.prepare('SELECT id FROM devices WHERE device_uid = ?').get(device_uid);
+    const { data: existingDevice } = await supabase
+      .from('devices')
+      .select('id')
+      .eq('device_uid', device_uid)
+      .single();
+
     if (existingDevice) {
       fs.unlinkSync(req.file.path);
       return res.status(409).json({ error: { message: 'Device with this UID already exists', code: 'DEVICE_EXISTS' } });
@@ -149,28 +181,37 @@ router.post('/simulated', upload.single('dataset'), (req, res) => {
     // Create device with dataset reference
     const id = uuidv4();
     const datasetPath = path.relative(process.cwd(), req.file.path);
-    
-    db.prepare(`
-      INSERT INTO devices (id, device_group_id, device_uid, name, type, ip_address, firmware_version, capabilities, is_simulated, status, dataset_path)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 'offline', ?)
-    `).run(
-      id,
-      device_group_id || null,
-      device_uid,
-      name,
-      type,
-      ip_address || null,
-      firmware_version || '1.0.0',
-      JSON.stringify(capabilities || {}),
-      datasetPath
-    );
 
-    const device = db.prepare('SELECT * FROM devices WHERE id = ?').get(id);
-    
+    const { error: insertError } = await supabase
+      .from('devices')
+      .insert({
+        id,
+        device_group_id: device_group_id || null,
+        device_uid,
+        name,
+        type,
+        ip_address: ip_address || null,
+        firmware_version: firmware_version || '1.0.0',
+        capabilities: capabilities || {},
+        is_simulated: true,
+        status: 'offline',
+        dataset_path: datasetPath
+      });
+
+    if (insertError) throw insertError;
+
+    const { data: device, error: fetchError } = await supabase
+      .from('devices')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (fetchError) throw fetchError;
+
     res.status(201).json({
       device: {
         ...device,
-        capabilities: JSON.parse(device.capabilities || '{}')
+        capabilities: device.capabilities || {}
       },
       dataset: {
         filename: req.file.originalname,
@@ -190,35 +231,37 @@ router.post('/simulated', upload.single('dataset'), (req, res) => {
 });
 
 // GET /api/devices/:id - Get device details
-router.get('/:id', (req, res) => {
+router.get('/:id', async (req, res) => {
   try {
-    const device = db.prepare(`
-      SELECT d.*, dg.name as group_name, dg.zone, f.name as facility_name
-      FROM devices d
-      LEFT JOIN device_groups dg ON d.device_group_id = dg.id
-      LEFT JOIN facilities f ON dg.facility_id = f.id
-      WHERE d.id = ?
-    `).get(req.params.id);
+    const { data: device, error } = await supabase
+      .from('devices')
+      .select('*, device_groups(name, zone, facilities(name))')
+      .eq('id', req.params.id)
+      .single();
 
-    if (!device) {
+    if (error || !device) {
       return res.status(404).json({ error: { message: 'Device not found', code: 'NOT_FOUND' } });
     }
 
     // Get recent metrics
-    const metrics = db.prepare(`
-      SELECT * FROM device_metrics
-      WHERE device_id = ?
-      ORDER BY timestamp DESC
-      LIMIT 10
-    `).all(req.params.id);
+    const { data: metrics } = await supabase
+      .from('device_metrics')
+      .select('*')
+      .eq('device_id', req.params.id)
+      .order('timestamp', { ascending: false })
+      .limit(10);
 
     res.json({
       device: {
         ...device,
-        capabilities: JSON.parse(device.capabilities || '{}'),
-        recent_metrics: metrics.map(m => ({
+        group_name: device.device_groups?.name || null,
+        zone: device.device_groups?.zone || null,
+        facility_name: device.device_groups?.facilities?.name || null,
+        capabilities: device.capabilities || {},
+        device_groups: undefined,
+        recent_metrics: (metrics || []).map(m => ({
           ...m,
-          sensor_readings: JSON.parse(m.sensor_readings || '{}')
+          sensor_readings: m.sensor_readings || {}
         }))
       }
     });
@@ -229,30 +272,38 @@ router.get('/:id', (req, res) => {
 });
 
 // PUT /api/devices/:id - Update device
-router.put('/:id', (req, res) => {
+router.put('/:id', async (req, res) => {
   try {
     const { name, device_group_id, ip_address, firmware_version, capabilities, status } = req.body;
 
-    const updates = [];
-    const params = [];
+    const updates = { updated_at: new Date().toISOString() };
 
-    if (name) { updates.push('name = ?'); params.push(name); }
-    if (device_group_id !== undefined) { updates.push('device_group_id = ?'); params.push(device_group_id); }
-    if (ip_address !== undefined) { updates.push('ip_address = ?'); params.push(ip_address); }
-    if (firmware_version) { updates.push('firmware_version = ?'); params.push(firmware_version); }
-    if (capabilities) { updates.push('capabilities = ?'); params.push(JSON.stringify(capabilities)); }
-    if (status) { updates.push('status = ?'); params.push(status); }
+    if (name) updates.name = name;
+    if (device_group_id !== undefined) updates.device_group_id = device_group_id;
+    if (ip_address !== undefined) updates.ip_address = ip_address;
+    if (firmware_version) updates.firmware_version = firmware_version;
+    if (capabilities) updates.capabilities = capabilities;
+    if (status) updates.status = status;
 
-    updates.push('updated_at = datetime("now")');
-    params.push(req.params.id);
+    const { error: updateError } = await supabase
+      .from('devices')
+      .update(updates)
+      .eq('id', req.params.id);
 
-    db.prepare(`UPDATE devices SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+    if (updateError) throw updateError;
 
-    const device = db.prepare('SELECT * FROM devices WHERE id = ?').get(req.params.id);
+    const { data: device, error: fetchError } = await supabase
+      .from('devices')
+      .select('*')
+      .eq('id', req.params.id)
+      .single();
+
+    if (fetchError) throw fetchError;
+
     res.json({
       device: {
         ...device,
-        capabilities: JSON.parse(device.capabilities || '{}')
+        capabilities: device.capabilities || {}
       }
     });
   } catch (error) {
@@ -262,9 +313,26 @@ router.put('/:id', (req, res) => {
 });
 
 // DELETE /api/devices/:id - Decommission device
-router.delete('/:id', (req, res) => {
+router.delete('/:id', async (req, res) => {
   try {
-    db.prepare('UPDATE devices SET is_active = 0, status = "offline", updated_at = datetime("now") WHERE id = ?').run(req.params.id);
+    // Check if device exists first
+    const { data: device, error: checkError } = await supabase
+      .from('devices')
+      .select('id')
+      .eq('id', req.params.id)
+      .single();
+
+    if (checkError || !device) {
+      return res.status(404).json({ error: { message: 'Device not found', code: 'NOT_FOUND' } });
+    }
+
+    const { error } = await supabase
+      .from('devices')
+      .update({ is_active: false, status: 'offline', updated_at: new Date().toISOString() })
+      .eq('id', req.params.id);
+
+    if (error) throw error;
+
     res.json({ message: 'Device decommissioned' });
   } catch (error) {
     console.error('Delete device error:', error);
@@ -273,32 +341,38 @@ router.delete('/:id', (req, res) => {
 });
 
 // POST /api/devices/:id/heartbeat - Device heartbeat
-router.post('/:id/heartbeat', (req, res) => {
+router.post('/:id/heartbeat', async (req, res) => {
   try {
     const { cpu_usage, memory_usage, temperature_celsius, network_latency_ms, error_count, sensor_readings } = req.body;
 
     // Update device status and last heartbeat
-    db.prepare(`
-      UPDATE devices
-      SET status = 'online', last_heartbeat = datetime('now'), updated_at = datetime('now')
-      WHERE id = ?
-    `).run(req.params.id);
+    const { error: updateError } = await supabase
+      .from('devices')
+      .update({
+        status: 'online',
+        last_heartbeat: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', req.params.id);
+
+    if (updateError) throw updateError;
 
     // Record metrics
     const metricsId = uuidv4();
-    db.prepare(`
-      INSERT INTO device_metrics (id, device_id, cpu_usage, memory_usage, temperature_celsius, network_latency_ms, error_count, sensor_readings)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      metricsId,
-      req.params.id,
-      cpu_usage,
-      memory_usage,
-      temperature_celsius,
-      network_latency_ms,
-      error_count || 0,
-      JSON.stringify(sensor_readings || {})
-    );
+    const { error: metricsError } = await supabase
+      .from('device_metrics')
+      .insert({
+        id: metricsId,
+        device_id: req.params.id,
+        cpu_usage,
+        memory_usage,
+        temperature_celsius,
+        network_latency_ms,
+        error_count: error_count || 0,
+        sensor_readings: sensor_readings || {}
+      });
+
+    if (metricsError) throw metricsError;
 
     res.json({ message: 'Heartbeat received', metrics_id: metricsId });
   } catch (error) {
@@ -308,25 +382,32 @@ router.post('/:id/heartbeat', (req, res) => {
 });
 
 // GET /api/devices/:id/metrics - Get device metrics history
-router.get('/:id/metrics', (req, res) => {
+router.get('/:id/metrics', async (req, res) => {
   try {
     const { limit = 100, offset = 0, from, to } = req.query;
 
-    let query = 'SELECT * FROM device_metrics WHERE device_id = ?';
-    const params = [req.params.id];
+    let query = supabase
+      .from('device_metrics')
+      .select('*')
+      .eq('device_id', req.params.id)
+      .order('timestamp', { ascending: false })
+      .range(parseInt(offset), parseInt(offset) + parseInt(limit) - 1);
 
-    if (from) { query += ' AND timestamp >= ?'; params.push(from); }
-    if (to) { query += ' AND timestamp <= ?'; params.push(to); }
+    if (from) {
+      query = query.gte('timestamp', from);
+    }
+    if (to) {
+      query = query.lte('timestamp', to);
+    }
 
-    query += ' ORDER BY timestamp DESC LIMIT ? OFFSET ?';
-    params.push(parseInt(limit), parseInt(offset));
+    const { data: metrics, error } = await query;
 
-    const metrics = db.prepare(query).all(...params);
+    if (error) throw error;
 
     res.json({
-      metrics: metrics.map(m => ({
+      metrics: (metrics || []).map(m => ({
         ...m,
-        sensor_readings: JSON.parse(m.sensor_readings || '{}')
+        sensor_readings: m.sensor_readings || {}
       }))
     });
   } catch (error) {
@@ -336,7 +417,7 @@ router.get('/:id/metrics', (req, res) => {
 });
 
 // POST /api/devices/bulk - Bulk device operations
-router.post('/bulk', (req, res) => {
+router.post('/bulk', async (req, res) => {
   try {
     const { operation, device_ids, data } = req.body;
 
@@ -348,24 +429,30 @@ router.post('/bulk', (req, res) => {
 
     switch (operation) {
       case 'update_status':
-        const stmt = db.prepare('UPDATE devices SET status = ?, updated_at = datetime("now") WHERE id = ?');
         for (const id of device_ids) {
-          stmt.run(data.status, id);
-          affected++;
+          const { error } = await supabase
+            .from('devices')
+            .update({ status: data.status, updated_at: new Date().toISOString() })
+            .eq('id', id);
+          if (!error) affected++;
         }
         break;
       case 'update_firmware':
-        const fwStmt = db.prepare('UPDATE devices SET firmware_version = ?, updated_at = datetime("now") WHERE id = ?');
         for (const id of device_ids) {
-          fwStmt.run(data.firmware_version, id);
-          affected++;
+          const { error } = await supabase
+            .from('devices')
+            .update({ firmware_version: data.firmware_version, updated_at: new Date().toISOString() })
+            .eq('id', id);
+          if (!error) affected++;
         }
         break;
       case 'decommission':
-        const decommStmt = db.prepare('UPDATE devices SET is_active = 0, status = "offline", updated_at = datetime("now") WHERE id = ?');
         for (const id of device_ids) {
-          decommStmt.run(id);
-          affected++;
+          const { error } = await supabase
+            .from('devices')
+            .update({ is_active: false, status: 'offline', updated_at: new Date().toISOString() })
+            .eq('id', id);
+          if (!error) affected++;
         }
         break;
       default:

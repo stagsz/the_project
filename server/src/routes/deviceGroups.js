@@ -1,32 +1,53 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
-import db from '../utils/db.js';
+import supabase from '../utils/supabase.js';
 
 const router = Router();
 
 // GET /api/device-groups - List device groups
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const { facility } = req.query;
 
-    let query = `
-      SELECT dg.*, f.name as facility_name,
-        (SELECT COUNT(*) FROM devices d WHERE d.device_group_id = dg.id AND d.is_active = 1) as device_count,
-        (SELECT COUNT(*) FROM devices d WHERE d.device_group_id = dg.id AND d.status = 'online') as online_count
-      FROM device_groups dg
-      LEFT JOIN facilities f ON dg.facility_id = f.id
-    `;
-    const params = [];
+    let query = supabase
+      .from('device_groups')
+      .select('*, facilities(name)')
+      .order('name');
 
     if (facility) {
-      query += ' WHERE dg.facility_id = ?';
-      params.push(facility);
+      query = query.eq('facility_id', facility);
     }
 
-    query += ' ORDER BY dg.name';
+    const { data: groups, error } = await query;
 
-    const groups = db.prepare(query).all(...params);
-    res.json({ groups });
+    if (error) throw error;
+
+    // Get device counts for each group
+    const groupsWithCounts = await Promise.all(
+      (groups || []).map(async (g) => {
+        const { count: deviceCount } = await supabase
+          .from('devices')
+          .select('*', { count: 'exact', head: true })
+          .eq('device_group_id', g.id)
+          .eq('is_active', true);
+
+        const { count: onlineCount } = await supabase
+          .from('devices')
+          .select('*', { count: 'exact', head: true })
+          .eq('device_group_id', g.id)
+          .eq('status', 'online');
+
+        return {
+          ...g,
+          facility_name: g.facilities?.name || null,
+          device_count: deviceCount || 0,
+          online_count: onlineCount || 0,
+          facilities: undefined
+        };
+      })
+    );
+
+    res.json({ groups: groupsWithCounts });
   } catch (error) {
     console.error('List device groups error:', error);
     res.status(500).json({ error: { message: 'Failed to list device groups', code: 'LIST_ERROR' } });
@@ -34,7 +55,7 @@ router.get('/', (req, res) => {
 });
 
 // POST /api/device-groups - Create device group
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   try {
     const { facility_id, name, description, equipment_type, zone } = req.body;
 
@@ -43,12 +64,20 @@ router.post('/', (req, res) => {
     }
 
     const id = uuidv4();
-    db.prepare(`
-      INSERT INTO device_groups (id, facility_id, name, description, equipment_type, zone)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(id, facility_id, name, description, equipment_type, zone);
+    const { error: insertError } = await supabase
+      .from('device_groups')
+      .insert({ id, facility_id, name, description, equipment_type, zone });
 
-    const group = db.prepare('SELECT * FROM device_groups WHERE id = ?').get(id);
+    if (insertError) throw insertError;
+
+    const { data: group, error: fetchError } = await supabase
+      .from('device_groups')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (fetchError) throw fetchError;
+
     res.status(201).json({ group });
   } catch (error) {
     console.error('Create device group error:', error);
@@ -57,29 +86,33 @@ router.post('/', (req, res) => {
 });
 
 // GET /api/device-groups/:id - Get device group details
-router.get('/:id', (req, res) => {
+router.get('/:id', async (req, res) => {
   try {
-    const group = db.prepare(`
-      SELECT dg.*, f.name as facility_name
-      FROM device_groups dg
-      LEFT JOIN facilities f ON dg.facility_id = f.id
-      WHERE dg.id = ?
-    `).get(req.params.id);
+    const { data: group, error } = await supabase
+      .from('device_groups')
+      .select('*, facilities(name)')
+      .eq('id', req.params.id)
+      .single();
 
-    if (!group) {
+    if (error || !group) {
       return res.status(404).json({ error: { message: 'Device group not found', code: 'NOT_FOUND' } });
     }
 
-    const devices = db.prepare(`
-      SELECT * FROM devices WHERE device_group_id = ? AND is_active = 1
-    `).all(req.params.id);
+    // Get devices in this group
+    const { data: devices } = await supabase
+      .from('devices')
+      .select('*')
+      .eq('device_group_id', req.params.id)
+      .eq('is_active', true);
 
     res.json({
       group: {
         ...group,
-        devices: devices.map(d => ({
+        facility_name: group.facilities?.name || null,
+        facilities: undefined,
+        devices: (devices || []).map(d => ({
           ...d,
-          capabilities: JSON.parse(d.capabilities || '{}')
+          capabilities: d.capabilities || {}
         }))
       }
     });
@@ -90,25 +123,33 @@ router.get('/:id', (req, res) => {
 });
 
 // PUT /api/device-groups/:id - Update device group
-router.put('/:id', (req, res) => {
+router.put('/:id', async (req, res) => {
   try {
     const { facility_id, name, description, equipment_type, zone } = req.body;
 
-    const updates = [];
-    const params = [];
+    const updates = { updated_at: new Date().toISOString() };
 
-    if (facility_id !== undefined) { updates.push('facility_id = ?'); params.push(facility_id); }
-    if (name) { updates.push('name = ?'); params.push(name); }
-    if (description !== undefined) { updates.push('description = ?'); params.push(description); }
-    if (equipment_type) { updates.push('equipment_type = ?'); params.push(equipment_type); }
-    if (zone !== undefined) { updates.push('zone = ?'); params.push(zone); }
+    if (facility_id !== undefined) updates.facility_id = facility_id;
+    if (name) updates.name = name;
+    if (description !== undefined) updates.description = description;
+    if (equipment_type) updates.equipment_type = equipment_type;
+    if (zone !== undefined) updates.zone = zone;
 
-    updates.push('updated_at = datetime("now")');
-    params.push(req.params.id);
+    const { error: updateError } = await supabase
+      .from('device_groups')
+      .update(updates)
+      .eq('id', req.params.id);
 
-    db.prepare(`UPDATE device_groups SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+    if (updateError) throw updateError;
 
-    const group = db.prepare('SELECT * FROM device_groups WHERE id = ?').get(req.params.id);
+    const { data: group, error: fetchError } = await supabase
+      .from('device_groups')
+      .select('*')
+      .eq('id', req.params.id)
+      .single();
+
+    if (fetchError) throw fetchError;
+
     res.json({ group });
   } catch (error) {
     console.error('Update device group error:', error);
@@ -117,15 +158,26 @@ router.put('/:id', (req, res) => {
 });
 
 // DELETE /api/device-groups/:id - Delete device group
-router.delete('/:id', (req, res) => {
+router.delete('/:id', async (req, res) => {
   try {
     // Check if group has devices
-    const deviceCount = db.prepare('SELECT COUNT(*) as count FROM devices WHERE device_group_id = ? AND is_active = 1').get(req.params.id);
-    if (deviceCount.count > 0) {
+    const { count } = await supabase
+      .from('devices')
+      .select('*', { count: 'exact', head: true })
+      .eq('device_group_id', req.params.id)
+      .eq('is_active', true);
+
+    if (count > 0) {
       return res.status(400).json({ error: { message: 'Cannot delete group with active devices', code: 'HAS_DEVICES' } });
     }
 
-    db.prepare('DELETE FROM device_groups WHERE id = ?').run(req.params.id);
+    const { error } = await supabase
+      .from('device_groups')
+      .delete()
+      .eq('id', req.params.id);
+
+    if (error) throw error;
+
     res.json({ message: 'Device group deleted' });
   } catch (error) {
     console.error('Delete device group error:', error);

@@ -1,37 +1,43 @@
 import { Router } from 'express';
-import db from '../utils/db.js';
+import supabase from '../utils/supabase.js';
 
 const router = Router();
 
 // GET /api/notifications - List notifications
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const { user_id, unread_only, type, limit = 50, offset = 0 } = req.query;
 
-    let query = 'SELECT * FROM notifications WHERE 1=1';
-    const params = [];
+    let query = supabase
+      .from('notifications')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .range(parseInt(offset), parseInt(offset) + parseInt(limit) - 1);
 
-    if (user_id) { query += ' AND user_id = ?'; params.push(user_id); }
-    if (unread_only === 'true') { query += ' AND is_read = 0'; }
-    if (type) { query += ' AND type = ?'; params.push(type); }
+    if (user_id) query = query.eq('user_id', user_id);
+    if (unread_only === 'true') query = query.eq('is_read', false);
+    if (type) query = query.eq('type', type);
 
-    query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
-    params.push(parseInt(limit), parseInt(offset));
+    const { data: notifications, error } = await query;
 
-    const notifications = db.prepare(query).all(...params);
+    if (error) throw error;
 
     // Get unread count
-    let countQuery = 'SELECT COUNT(*) as count FROM notifications WHERE is_read = 0';
-    const countParams = [];
-    if (user_id) { countQuery += ' AND user_id = ?'; countParams.push(user_id); }
-    const { count: unreadCount } = db.prepare(countQuery).get(...countParams);
+    let countQuery = supabase
+      .from('notifications')
+      .select('*', { count: 'exact', head: true })
+      .eq('is_read', false);
+
+    if (user_id) countQuery = countQuery.eq('user_id', user_id);
+
+    const { count: unreadCount } = await countQuery;
 
     res.json({
-      notifications: notifications.map(n => ({
+      notifications: (notifications || []).map(n => ({
         ...n,
-        data: JSON.parse(n.data || '{}')
+        data: n.data || {}
       })),
-      unread_count: unreadCount
+      unread_count: unreadCount || 0
     });
   } catch (error) {
     console.error('List notifications error:', error);
@@ -40,15 +46,23 @@ router.get('/', (req, res) => {
 });
 
 // PUT /api/notifications/:id/read - Mark as read
-router.put('/:id/read', (req, res) => {
+router.put('/:id/read', async (req, res) => {
   try {
-    db.prepare('UPDATE notifications SET is_read = 1 WHERE id = ?').run(req.params.id);
+    await supabase
+      .from('notifications')
+      .update({ is_read: true })
+      .eq('id', req.params.id);
 
-    const notification = db.prepare('SELECT * FROM notifications WHERE id = ?').get(req.params.id);
+    const { data: notification } = await supabase
+      .from('notifications')
+      .select('*')
+      .eq('id', req.params.id)
+      .single();
+
     res.json({
       notification: {
         ...notification,
-        data: JSON.parse(notification.data || '{}')
+        data: notification.data || {}
       }
     });
   } catch (error) {
@@ -58,21 +72,23 @@ router.put('/:id/read', (req, res) => {
 });
 
 // PUT /api/notifications/read-all - Mark all as read
-router.put('/read-all', (req, res) => {
+router.put('/read-all', async (req, res) => {
   try {
     const { user_id } = req.body;
 
-    let query = 'UPDATE notifications SET is_read = 1';
-    const params = [];
+    let query = supabase
+      .from('notifications')
+      .update({ is_read: true });
 
     if (user_id) {
-      query += ' WHERE user_id = ?';
-      params.push(user_id);
+      query = query.eq('user_id', user_id);
     }
 
-    const result = db.prepare(query).run(...params);
+    const { error } = await query;
 
-    res.json({ message: 'All notifications marked as read', updated: result.changes });
+    if (error) throw error;
+
+    res.json({ message: 'All notifications marked as read' });
   } catch (error) {
     console.error('Mark all read error:', error);
     res.status(500).json({ error: { message: 'Failed to mark all as read', code: 'UPDATE_ERROR' } });
@@ -80,9 +96,15 @@ router.put('/read-all', (req, res) => {
 });
 
 // DELETE /api/notifications/:id - Delete notification
-router.delete('/:id', (req, res) => {
+router.delete('/:id', async (req, res) => {
   try {
-    db.prepare('DELETE FROM notifications WHERE id = ?').run(req.params.id);
+    const { error } = await supabase
+      .from('notifications')
+      .delete()
+      .eq('id', req.params.id);
+
+    if (error) throw error;
+
     res.json({ message: 'Notification deleted' });
   } catch (error) {
     console.error('Delete notification error:', error);

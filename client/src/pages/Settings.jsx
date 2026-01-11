@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
-import { Settings as SettingsIcon, User, Bell, Shield, Palette, Save } from 'lucide-react'
+import { Settings as SettingsIcon, User, Bell, Palette, Save } from 'lucide-react'
 
 export default function Settings() {
   const { user, updateProfile } = useAuth()
@@ -26,7 +26,7 @@ export default function Settings() {
   }
 
   return (
-    <div className="space-y-6 max-w-3xl">
+    <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Settings</h1>
         <p className="text-gray-500 dark:text-gray-400">Manage your preferences</p>
@@ -34,8 +34,10 @@ export default function Settings() {
 
       {/* Profile */}
       <div className="card p-6">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-          <User className="w-5 h-5 text-gray-500" />
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-3">
+          <div className="w-10 h-10 bg-blue-100 dark:bg-blue-900/50 rounded-lg flex items-center justify-center">
+            <User className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+          </div>
           Profile
         </h2>
         <div className="space-y-4">
@@ -56,8 +58,10 @@ export default function Settings() {
 
       {/* Appearance */}
       <div className="card p-6">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-          <Palette className="w-5 h-5 text-gray-500" />
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-3">
+          <div className="w-10 h-10 bg-violet-100 dark:bg-violet-900/50 rounded-lg flex items-center justify-center">
+            <Palette className="w-5 h-5 text-violet-600 dark:text-violet-400" />
+          </div>
           Appearance
         </h2>
         <div className="space-y-4">
@@ -77,8 +81,10 @@ export default function Settings() {
 
       {/* Industrial Preferences */}
       <div className="card p-6">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-          <SettingsIcon className="w-5 h-5 text-gray-500" />
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-3">
+          <div className="w-10 h-10 bg-emerald-100 dark:bg-emerald-900/50 rounded-lg flex items-center justify-center">
+            <SettingsIcon className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+          </div>
           Industrial Preferences
         </h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -138,8 +144,10 @@ export default function Settings() {
 
       {/* Notifications */}
       <div className="card p-6">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-          <Bell className="w-5 h-5 text-gray-500" />
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-3">
+          <div className="w-10 h-10 bg-amber-100 dark:bg-amber-900/50 rounded-lg flex items-center justify-center">
+            <Bell className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+          </div>
           Notifications
         </h2>
         <div className="space-y-3">

@@ -8,10 +8,12 @@
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
     "init-db": "node src/utils/initDb.js",
-    "migrate-db": "node src/utils/migrateDb.js"
+    "migrate-db": "node src/utils/migrateDb.js",
+    "migrate-process": "node src/utils/migrateProcessOptimization.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.27.0",
+    "@supabase/supabase-js": "^2.89.0",
     "better-sqlite3": "^11.3.0",
     "cors": "^2.8.5",
     "csv-parser": "^3.0.0",

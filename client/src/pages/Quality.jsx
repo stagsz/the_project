@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { CheckCircle2, XCircle, AlertTriangle, Plus, Filter, Search } from 'lucide-react'
+import { CheckCircle2, XCircle, AlertTriangle, Plus, Filter, Search, HelpCircle } from 'lucide-react'
+import Tooltip, { QUALITY_TOOLTIPS } from '../components/Tooltip'
 
 const resultColors = {
   pass: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-400',
@@ -35,14 +36,29 @@ export default function Quality() {
 
   async function generateInspections() {
     try {
-      await fetch('/api/quality/generate-inspections', {
+      console.log('[Quality] Generating inspections...');
+      const response = await fetch('/api/quality/generate-inspections', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ count: 20 })
       })
+      
+      console.log('[Quality] Response status:', response.status);
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('[Quality] API Error:', errorData);
+        alert(`Failed to generate inspections: ${errorData.error?.message || 'Unknown error'}`);
+        return;
+      }
+      
+      const data = await response.json();
+      console.log('[Quality] Generated inspections:', data);
+      alert(`Successfully generated ${data.count} inspections!`);
       fetchData()
     } catch (error) {
-      console.error('Failed to generate inspections:', error)
+      console.error('[Quality] Failed to generate inspections:', error)
+      alert(`Error: ${error.message}`);
     }
   }
 
@@ -58,31 +74,43 @@ export default function Quality() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Quality</h1>
+          <Tooltip content={QUALITY_TOOLTIPS.pageOverview.content}>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Quality</h1>
+          </Tooltip>
           <p className="text-gray-500 dark:text-gray-400">Quality inspection management</p>
         </div>
-        <button onClick={generateInspections} className="btn-primary">
-          <Plus className="w-4 h-4 mr-2" />
-          Generate Inspections
-        </button>
+        <Tooltip content={QUALITY_TOOLTIPS.generateInspections.content}>
+          <button onClick={generateInspections} className="btn-primary">
+            <Plus className="w-4 h-4 mr-2" />
+            Generate Inspections
+          </button>
+        </Tooltip>
       </div>
 
       {metrics && (
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div className="card p-4">
-            <p className="text-sm text-gray-500">Total Inspections</p>
+            <Tooltip content={QUALITY_TOOLTIPS.totalInspections.content}>
+              <p className="text-sm text-gray-500">Total Inspections</p>
+            </Tooltip>
             <p className="metric-value text-gray-900 dark:text-white">{metrics.total}</p>
           </div>
           <div className="card p-4">
-            <p className="text-sm text-gray-500">Pass Rate</p>
+            <Tooltip content={QUALITY_TOOLTIPS.passRate.content}>
+              <p className="text-sm text-gray-500">Pass Rate</p>
+            </Tooltip>
             <p className="metric-value text-emerald-600">{metrics.pass_rate}%</p>
           </div>
           <div className="card p-4">
-            <p className="text-sm text-gray-500">Failed</p>
+            <Tooltip content={QUALITY_TOOLTIPS.failedCount.content}>
+              <p className="text-sm text-gray-500">Failed</p>
+            </Tooltip>
             <p className="metric-value text-rose-600">{metrics.failed}</p>
           </div>
           <div className="card p-4">
-            <p className="text-sm text-gray-500">Overrides</p>
+            <Tooltip content={QUALITY_TOOLTIPS.overridesCount.content}>
+              <p className="text-sm text-gray-500">Overrides</p>
+            </Tooltip>
             <p className="metric-value text-gray-900 dark:text-white">{metrics.overrides}</p>
           </div>
         </div>
@@ -92,12 +120,36 @@ export default function Quality() {
         <table className="table">
           <thead>
             <tr>
-              <th>Device</th>
-              <th>Result</th>
-              <th>Defect Type</th>
-              <th>Confidence</th>
-              <th>Override</th>
-              <th>Timestamp</th>
+              <th>
+                <Tooltip content={QUALITY_TOOLTIPS.deviceColumn.content}>
+                  <span>Device</span>
+                </Tooltip>
+              </th>
+              <th>
+                <Tooltip content={QUALITY_TOOLTIPS.resultColumn.content}>
+                  <span>Result</span>
+                </Tooltip>
+              </th>
+              <th>
+                <Tooltip content={QUALITY_TOOLTIPS.defectType.content}>
+                  <span>Defect Type</span>
+                </Tooltip>
+              </th>
+              <th>
+                <Tooltip content={QUALITY_TOOLTIPS.confidenceScore.content}>
+                  <span>Confidence</span>
+                </Tooltip>
+              </th>
+              <th>
+                <Tooltip content={QUALITY_TOOLTIPS.humanOverride.content}>
+                  <span>Override</span>
+                </Tooltip>
+              </th>
+              <th>
+                <Tooltip content={QUALITY_TOOLTIPS.timestamp.content}>
+                  <span>Timestamp</span>
+                </Tooltip>
+              </th>
             </tr>
           </thead>
           <tbody>

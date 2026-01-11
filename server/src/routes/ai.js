@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { readFileSync, existsSync } from 'fs';
-import db from '../utils/db.js';
+import { v4 as uuidv4 } from 'uuid';
+import supabase from '../utils/supabase.js';
 
 const router = Router();
 
@@ -55,6 +56,30 @@ async function callClaude(prompt, systemPrompt = null) {
   }
 }
 
+// Helper function to log AI responses
+async function logAIResponse(queryType, queryText, responseText, options = {}) {
+  try {
+    await supabase
+      .from('ai_logs')
+      .insert({
+        id: uuidv4(),
+        query_type: queryType,
+        query_text: queryText.substring(0, 500),
+        response_text: responseText.substring(0, 2000),
+        device_id: options.device_id || null,
+        anomaly_id: options.anomaly_id || null,
+        training_round_id: options.training_round_id || null,
+        device_name: options.device_name || null,
+        device_type: options.device_type || null,
+        user_id: options.user_id || null,
+        created_at: new Date().toISOString()
+      });
+  } catch (error) {
+    console.error('Failed to log AI response:', error);
+    // Don't throw - logging failure shouldn't break the API
+  }
+}
+
 // POST /api/ai/query - Natural language query about system
 router.post('/query', async (req, res) => {
   try {
@@ -65,40 +90,69 @@ router.post('/query', async (req, res) => {
     }
 
     // Gather context
-    const deviceStats = db.prepare(`
-      SELECT
-        COUNT(*) as total,
-        SUM(CASE WHEN status = 'online' THEN 1 ELSE 0 END) as online,
-        SUM(CASE WHEN status = 'offline' THEN 1 ELSE 0 END) as offline,
-        SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) as error
-      FROM devices WHERE is_active = 1
-    `).get();
+    const { count: totalDevices } = await supabase
+      .from('devices')
+      .select('*', { count: 'exact', head: true })
+      .eq('is_active', true);
 
-    const modelStats = db.prepare(`
-      SELECT COUNT(*) as total,
-        SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as active
-      FROM models
-    `).get();
+    const { count: onlineDevices } = await supabase
+      .from('devices')
+      .select('*', { count: 'exact', head: true })
+      .eq('is_active', true)
+      .eq('status', 'online');
 
-    const recentAnomalies = db.prepare(`
-      SELECT anomaly_type, severity, COUNT(*) as count
-      FROM anomalies
-      WHERE detected_at > datetime('now', '-24 hours')
-      GROUP BY anomaly_type, severity
-    `).all();
+    const { count: offlineDevices } = await supabase
+      .from('devices')
+      .select('*', { count: 'exact', head: true })
+      .eq('is_active', true)
+      .eq('status', 'offline');
 
-    const trainingStatus = db.prepare(`
-      SELECT status, COUNT(*) as count
-      FROM training_rounds
-      WHERE created_at > datetime('now', '-7 days')
-      GROUP BY status
-    `).all();
+    const { count: errorDevices } = await supabase
+      .from('devices')
+      .select('*', { count: 'exact', head: true })
+      .eq('is_active', true)
+      .eq('status', 'error');
+
+    const { count: totalModels } = await supabase
+      .from('models')
+      .select('*', { count: 'exact', head: true });
+
+    const { count: activeModels } = await supabase
+      .from('models')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'active');
+
+    // Get recent anomalies
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { data: recentAnomalies } = await supabase
+      .from('anomalies')
+      .select('anomaly_type, severity')
+      .gte('detected_at', yesterday);
+
+    // Group anomalies
+    const anomalyGroups = {};
+    (recentAnomalies || []).forEach(a => {
+      const key = `${a.anomaly_type}-${a.severity}`;
+      anomalyGroups[key] = (anomalyGroups[key] || 0) + 1;
+    });
+
+    // Get training status
+    const lastWeek = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const { data: trainingRounds } = await supabase
+      .from('training_rounds')
+      .select('status')
+      .gte('created_at', lastWeek);
+
+    const trainingStatus = {};
+    (trainingRounds || []).forEach(t => {
+      trainingStatus[t.status] = (trainingStatus[t.status] || 0) + 1;
+    });
 
     const context = `
 Current System Status:
-- Devices: ${deviceStats.total} total (${deviceStats.online} online, ${deviceStats.offline} offline, ${deviceStats.error} error)
-- Models: ${modelStats.total} total (${modelStats.active} active)
-- Recent Anomalies (24h): ${JSON.stringify(recentAnomalies)}
+- Devices: ${totalDevices || 0} total (${onlineDevices || 0} online, ${offlineDevices || 0} offline, ${errorDevices || 0} error)
+- Models: ${totalModels || 0} total (${activeModels || 0} active)
+- Recent Anomalies (24h): ${JSON.stringify(anomalyGroups)}
 - Training Rounds (7d): ${JSON.stringify(trainingStatus)}
     `;
 
@@ -112,6 +166,9 @@ ${context}`;
 
     const response = await callClaude(query, systemPrompt);
 
+    // Log AI response
+    await logAIResponse('query', query, response.content);
+
     res.json({ response: response.content, mock: response.mock });
   } catch (error) {
     console.error('AI query error:', error);
@@ -123,36 +180,46 @@ ${context}`;
 router.get('/insights', async (req, res) => {
   try {
     // Gather system data for insights
-    const anomalyCount = db.prepare(`
-      SELECT COUNT(*) as count FROM anomalies
-      WHERE status = 'new' AND detected_at > datetime('now', '-24 hours')
-    `).get();
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { count: anomalyCount } = await supabase
+      .from('anomalies')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'new')
+      .gte('detected_at', yesterday);
 
-    const offlineDevices = db.prepare(`
-      SELECT name, last_heartbeat FROM devices
-      WHERE status = 'offline' AND is_active = 1
-      ORDER BY last_heartbeat DESC LIMIT 5
-    `).all();
+    const { data: offlineDevices } = await supabase
+      .from('devices')
+      .select('name, last_heartbeat')
+      .eq('status', 'offline')
+      .eq('is_active', true)
+      .order('last_heartbeat', { ascending: false })
+      .limit(5);
 
-    const pendingMaintenance = db.prepare(`
-      SELECT COUNT(*) as count FROM maintenance_predictions
-      WHERE status = 'pending' AND risk_level IN ('high', 'critical')
-    `).get();
+    const { count: pendingMaintenance } = await supabase
+      .from('maintenance_predictions')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'pending')
+      .in('risk_level', ['high', 'critical']);
 
-    const recentTrainingSuccess = db.prepare(`
-      SELECT
-        SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
-        SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed
-      FROM training_rounds
-      WHERE created_at > datetime('now', '-7 days')
-    `).get();
+    const lastWeek = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const { count: completedTraining } = await supabase
+      .from('training_rounds')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'completed')
+      .gte('created_at', lastWeek);
+
+    const { count: failedTraining } = await supabase
+      .from('training_rounds')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'failed')
+      .gte('created_at', lastWeek);
 
     const prompt = `Based on the following system data, provide 3-5 brief, actionable insights for system operators:
 
-- Unacknowledged anomalies in last 24h: ${anomalyCount.count}
-- Offline devices: ${offlineDevices.map(d => d.name).join(', ') || 'None'}
-- High/critical pending maintenance: ${pendingMaintenance.count}
-- Training rounds (7d): ${recentTrainingSuccess.completed} completed, ${recentTrainingSuccess.failed} failed
+- Unacknowledged anomalies in last 24h: ${anomalyCount || 0}
+- Offline devices: ${(offlineDevices || []).map(d => d.name).join(', ') || 'None'}
+- High/critical pending maintenance: ${pendingMaintenance || 0}
+- Training rounds (7d): ${completedTraining || 0} completed, ${failedTraining || 0} failed
 
 Format as a JSON array of objects with 'title', 'description', and 'priority' (high/medium/low) fields.`;
 
@@ -161,7 +228,6 @@ Format as a JSON array of objects with 'title', 'description', and 'priority' (h
     let insights = [];
     if (!response.mock && !response.error) {
       try {
-        // Try to parse JSON from response
         const jsonMatch = response.content.match(/\[[\s\S]*\]/);
         if (jsonMatch) {
           insights = JSON.parse(jsonMatch[0]);
@@ -175,28 +241,31 @@ Format as a JSON array of objects with 'title', 'description', and 'priority' (h
       }
     } else {
       // Generate basic insights without AI
-      if (anomalyCount.count > 0) {
+      if ((anomalyCount || 0) > 0) {
         insights.push({
           title: 'Unacknowledged Anomalies',
-          description: `There are ${anomalyCount.count} anomalies that need attention.`,
-          priority: anomalyCount.count > 5 ? 'high' : 'medium'
+          description: `There are ${anomalyCount} anomalies that need attention.`,
+          priority: (anomalyCount || 0) > 5 ? 'high' : 'medium'
         });
       }
-      if (offlineDevices.length > 0) {
+      if ((offlineDevices || []).length > 0) {
         insights.push({
           title: 'Offline Devices',
           description: `${offlineDevices.length} devices are currently offline.`,
           priority: 'medium'
         });
       }
-      if (pendingMaintenance.count > 0) {
+      if ((pendingMaintenance || 0) > 0) {
         insights.push({
           title: 'Pending Maintenance',
-          description: `${pendingMaintenance.count} high-priority maintenance items pending.`,
+          description: `${pendingMaintenance} high-priority maintenance items pending.`,
           priority: 'high'
         });
       }
     }
+
+    // Log AI response
+    await logAIResponse('insights', prompt, response.content);
 
     res.json({ insights, mock: response.mock });
   } catch (error) {
@@ -214,38 +283,39 @@ router.post('/explain-anomaly', async (req, res) => {
       return res.status(400).json({ error: { message: 'anomaly_id is required', code: 'VALIDATION_ERROR' } });
     }
 
-    const anomaly = db.prepare(`
-      SELECT a.*, d.name as device_name, d.type as device_type
-      FROM anomalies a
-      JOIN devices d ON a.device_id = d.id
-      WHERE a.id = ?
-    `).get(anomaly_id);
+    const { data: anomaly, error } = await supabase
+      .from('anomalies')
+      .select('*, devices(name, type)')
+      .eq('id', anomaly_id)
+      .single();
 
-    if (!anomaly) {
+    if (error || !anomaly) {
       return res.status(404).json({ error: { message: 'Anomaly not found', code: 'NOT_FOUND' } });
     }
 
     // Get recent metrics for context
-    const recentMetrics = db.prepare(`
-      SELECT * FROM device_metrics
-      WHERE device_id = ? AND timestamp <= ?
-      ORDER BY timestamp DESC LIMIT 10
-    `).all(anomaly.device_id, anomaly.detected_at);
+    const { data: recentMetrics } = await supabase
+      .from('device_metrics')
+      .select('*')
+      .eq('device_id', anomaly.device_id)
+      .lte('timestamp', anomaly.detected_at)
+      .order('timestamp', { ascending: false })
+      .limit(10);
 
-    const sensorData = JSON.parse(anomaly.sensor_data || '{}');
+    const sensorData = anomaly.sensor_data || {};
 
     const prompt = `Analyze this industrial anomaly and provide a brief explanation and recommended actions:
 
-Device: ${anomaly.device_name} (${anomaly.device_type})
+Device: ${anomaly.devices?.name || 'Unknown'} (${anomaly.devices?.type || 'Unknown'})
 Anomaly Type: ${anomaly.anomaly_type}
 Severity: ${anomaly.severity}
 Detected: ${anomaly.detected_at}
-Confidence: ${(anomaly.confidence_score * 100).toFixed(1)}%
+Confidence: ${((anomaly.confidence_score || 0) * 100).toFixed(1)}%
 Sensor Data: ${JSON.stringify(sensorData)}
 Description: ${anomaly.description || 'No description'}
 
 Recent Metrics:
-${recentMetrics.map(m => `- CPU: ${m.cpu_usage?.toFixed(1)}%, Temp: ${m.temperature_celsius?.toFixed(1)}C, Errors: ${m.error_count}`).join('\n')}
+${(recentMetrics || []).map(m => `- CPU: ${m.cpu_usage?.toFixed(1)}%, Temp: ${m.temperature_celsius?.toFixed(1)}C, Errors: ${m.error_count}`).join('\n')}
 
 Provide:
 1. Likely root cause
@@ -256,7 +326,18 @@ Provide:
     const response = await callClaude(prompt);
 
     // Store explanation in anomaly
-    db.prepare('UPDATE anomalies SET ai_explanation = ? WHERE id = ?').run(response.content, anomaly_id);
+    await supabase
+      .from('anomalies')
+      .update({ ai_explanation: response.content })
+      .eq('id', anomaly_id);
+
+    // Log AI response with device and anomaly info
+    await logAIResponse('explain_anomaly', prompt, response.content, {
+      device_id: anomaly.device_id,
+      device_name: anomaly.devices?.name,
+      device_type: anomaly.devices?.type,
+      anomaly_id
+    });
 
     res.json({
       explanation: response.content,
@@ -273,27 +354,62 @@ Provide:
 router.get('/recommendations', async (req, res) => {
   try {
     // Gather training performance data
-    const trainingPerformance = db.prepare(`
-      SELECT m.name as model_name, m.model_type,
-        AVG(json_extract(tr.result_metrics, '$.accuracy')) as avg_accuracy,
-        COUNT(*) as round_count
-      FROM training_rounds tr
-      JOIN models m ON tr.model_id = m.id
-      WHERE tr.status = 'completed'
-      GROUP BY m.id
-    `).all();
+    const { data: trainingData } = await supabase
+      .from('training_rounds')
+      .select('result_metrics, models(name, model_type)')
+      .eq('status', 'completed');
+
+    // Group by model
+    const modelPerformance = {};
+    (trainingData || []).forEach(t => {
+      const modelName = t.models?.name || 'Unknown';
+      const modelType = t.models?.model_type || 'Unknown';
+      if (!modelPerformance[modelName]) {
+        modelPerformance[modelName] = {
+          model_type: modelType,
+          accuracies: [],
+          count: 0
+        };
+      }
+      modelPerformance[modelName].count++;
+      if (t.result_metrics?.accuracy) {
+        modelPerformance[modelName].accuracies.push(t.result_metrics.accuracy);
+      }
+    });
+
+    const trainingPerformance = Object.entries(modelPerformance).map(([name, data]) => ({
+      model_name: name,
+      model_type: data.model_type,
+      avg_accuracy: data.accuracies.length > 0
+        ? data.accuracies.reduce((a, b) => a + b, 0) / data.accuracies.length
+        : 0,
+      round_count: data.count
+    }));
 
     // Get device participation rates
-    const participationRates = db.prepare(`
-      SELECT d.name, d.type,
-        COUNT(CASE WHEN dtc.status = 'completed' THEN 1 END) as successful,
-        COUNT(*) as total
-      FROM device_training_contributions dtc
-      JOIN devices d ON dtc.device_id = d.id
-      GROUP BY d.id
-      ORDER BY successful * 1.0 / total ASC
-      LIMIT 5
-    `).all();
+    const { data: contributionData } = await supabase
+      .from('device_training_contributions')
+      .select('status, devices(name, type)');
+
+    const deviceStats = {};
+    (contributionData || []).forEach(c => {
+      const deviceName = c.devices?.name || 'Unknown';
+      if (!deviceStats[deviceName]) {
+        deviceStats[deviceName] = { type: c.devices?.type, successful: 0, total: 0 };
+      }
+      deviceStats[deviceName].total++;
+      if (c.status === 'completed') deviceStats[deviceName].successful++;
+    });
+
+    const participationRates = Object.entries(deviceStats)
+      .map(([name, data]) => ({
+        name,
+        type: data.type,
+        successful: data.successful,
+        total: data.total
+      }))
+      .sort((a, b) => (a.successful / a.total) - (b.successful / b.total))
+      .slice(0, 5);
 
     const prompt = `Based on the following federated learning performance data, provide 3-5 optimization recommendations:
 
@@ -323,6 +439,9 @@ Format as JSON array with 'category', 'recommendation', and 'expected_impact' fi
       }
     }
 
+    // Log AI response
+    await logAIResponse('recommendations', prompt, response.content);
+
     res.json({ recommendations, mock: response.mock });
   } catch (error) {
     console.error('Get recommendations error:', error);
@@ -339,39 +458,36 @@ router.post('/analyze-training', async (req, res) => {
       return res.status(400).json({ error: { message: 'training_round_id is required', code: 'VALIDATION_ERROR' } });
     }
 
-    const round = db.prepare(`
-      SELECT tr.*, m.name as model_name, m.model_type
-      FROM training_rounds tr
-      JOIN models m ON tr.model_id = m.id
-      WHERE tr.id = ?
-    `).get(training_round_id);
+    const { data: round, error } = await supabase
+      .from('training_rounds')
+      .select('*, models(name, model_type)')
+      .eq('id', training_round_id)
+      .single();
 
-    if (!round) {
+    if (error || !round) {
       return res.status(404).json({ error: { message: 'Training round not found', code: 'NOT_FOUND' } });
     }
 
-    const contributions = db.prepare(`
-      SELECT dtc.*, d.name as device_name
-      FROM device_training_contributions dtc
-      JOIN devices d ON dtc.device_id = d.id
-      WHERE dtc.training_round_id = ?
-    `).all(training_round_id);
+    const { data: contributions } = await supabase
+      .from('device_training_contributions')
+      .select('*, devices(name)')
+      .eq('training_round_id', training_round_id);
 
-    const hyperparameters = JSON.parse(round.hyperparameters || '{}');
-    const resultMetrics = JSON.parse(round.result_metrics || '{}');
+    const hyperparameters = round.hyperparameters || {};
+    const resultMetrics = round.result_metrics || {};
 
     const prompt = `Analyze this federated learning training round:
 
-Model: ${round.model_name} (${round.model_type})
+Model: ${round.models?.name || 'Unknown'} (${round.models?.model_type || 'Unknown'})
 Round: ${round.round_number}
 Status: ${round.status}
 Hyperparameters: learning_rate=${hyperparameters.learning_rate}, batch_size=${hyperparameters.batch_size}, epochs=${hyperparameters.local_epochs}
 Final Metrics: accuracy=${resultMetrics.accuracy?.toFixed(4)}, loss=${resultMetrics.loss?.toFixed(4)}
 
 Device Contributions:
-${contributions.map(c => {
-  const metrics = JSON.parse(c.local_metrics || '{}');
-  return `- ${c.device_name}: ${c.status}, samples=${c.data_samples_count}, loss=${metrics.loss?.toFixed(4) || 'N/A'}`;
+${(contributions || []).map(c => {
+  const metrics = c.local_metrics || {};
+  return `- ${c.devices?.name || 'Unknown'}: ${c.status}, samples=${c.data_samples_count}, loss=${metrics.loss?.toFixed(4) || 'N/A'}`;
 }).join('\n')}
 
 Provide:
@@ -382,6 +498,11 @@ Provide:
 
     const response = await callClaude(prompt);
 
+    // Log AI response with training info
+    await logAIResponse('analyze_training', prompt, response.content, {
+      training_round_id
+    });
+
     res.json({
       analysis: response.content,
       training_round_id,
@@ -390,6 +511,98 @@ Provide:
   } catch (error) {
     console.error('Analyze training error:', error);
     res.status(500).json({ error: { message: 'Failed to analyze training', code: 'AI_ERROR' } });
+  }
+});
+
+// GET /api/ai/logs - Get all AI response logs
+router.get('/logs', async (req, res) => {
+  try {
+    const { device_id, query_type, limit = 50, offset = 0 } = req.query;
+
+    let query = supabase
+      .from('ai_logs')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .range(parseInt(offset), parseInt(offset) + parseInt(limit) - 1);
+
+    if (device_id) query = query.eq('device_id', device_id);
+    if (query_type) query = query.eq('query_type', query_type);
+
+    const { data: logs, error } = await query;
+
+    if (error) throw error;
+
+    // Get total count
+    let countQuery = supabase
+      .from('ai_logs')
+      .select('*', { count: 'exact', head: true });
+
+    if (device_id) countQuery = countQuery.eq('device_id', device_id);
+    if (query_type) countQuery = countQuery.eq('query_type', query_type);
+
+    const { count } = await countQuery;
+
+    res.json({
+      logs: logs || [],
+      total: count || 0,
+      limit: parseInt(limit),
+      offset: parseInt(offset)
+    });
+  } catch (error) {
+    console.error('Get logs error:', error);
+    res.status(500).json({ error: { message: 'Failed to get logs', code: 'GET_ERROR' } });
+  }
+});
+
+// GET /api/ai/logs/:id - Get specific AI log
+router.get('/logs/:id', async (req, res) => {
+  try {
+    const { data: log, error } = await supabase
+      .from('ai_logs')
+      .select('*')
+      .eq('id', req.params.id)
+      .single();
+
+    if (error || !log) {
+      return res.status(404).json({ error: { message: 'Log not found', code: 'NOT_FOUND' } });
+    }
+
+    res.json({ log });
+  } catch (error) {
+    console.error('Get log error:', error);
+    res.status(500).json({ error: { message: 'Failed to get log', code: 'GET_ERROR' } });
+  }
+});
+
+// GET /api/ai/logs/device/:deviceId - Get AI logs for specific device
+router.get('/logs/device/:deviceId', async (req, res) => {
+  try {
+    const { limit = 50, offset = 0 } = req.query;
+
+    const { data: logs, error } = await supabase
+      .from('ai_logs')
+      .select('*')
+      .eq('device_id', req.params.deviceId)
+      .order('created_at', { ascending: false })
+      .range(parseInt(offset), parseInt(offset) + parseInt(limit) - 1);
+
+    if (error) throw error;
+
+    const { count } = await supabase
+      .from('ai_logs')
+      .select('*', { count: 'exact', head: true })
+      .eq('device_id', req.params.deviceId);
+
+    res.json({
+      logs: logs || [],
+      total: count || 0,
+      deviceId: req.params.deviceId,
+      limit: parseInt(limit),
+      offset: parseInt(offset)
+    });
+  } catch (error) {
+    console.error('Get device logs error:', error);
+    res.status(500).json({ error: { message: 'Failed to get device logs', code: 'GET_ERROR' } });
   }
 });
 

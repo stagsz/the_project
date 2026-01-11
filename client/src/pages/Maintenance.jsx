@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { Wrench, Plus, Filter, Search, Calendar, AlertTriangle } from 'lucide-react'
+import { Wrench, Plus, Filter, Search, Calendar, AlertTriangle, HelpCircle } from 'lucide-react'
+import Tooltip, { MAINTENANCE_TOOLTIPS } from '../components/Tooltip'
 
 const riskColors = {
   low: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-400',
@@ -52,26 +53,58 @@ export default function Maintenance() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Maintenance</h1>
+          <Tooltip content={MAINTENANCE_TOOLTIPS.pageOverview.content}>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Maintenance</h1>
+          </Tooltip>
           <p className="text-gray-500 dark:text-gray-400">Predictive maintenance and scheduling</p>
         </div>
-        <button onClick={generatePredictions} className="btn-primary">
-          <Plus className="w-4 h-4 mr-2" />
-          Generate Predictions
-        </button>
+        <Tooltip content={MAINTENANCE_TOOLTIPS.generatePredictions.content}>
+          <button onClick={generatePredictions} className="btn-primary">
+            <Plus className="w-4 h-4 mr-2" />
+            Generate Predictions
+          </button>
+        </Tooltip>
       </div>
 
       <div className="card overflow-hidden">
         <table className="table">
           <thead>
             <tr>
-              <th>Device</th>
-              <th>Component</th>
-              <th>Type</th>
-              <th>Risk Level</th>
-              <th>Predicted Date</th>
-              <th>Est. Cost</th>
-              <th>Status</th>
+              <th>
+                <Tooltip content={MAINTENANCE_TOOLTIPS.deviceColumn.content}>
+                  <span>Device</span>
+                </Tooltip>
+              </th>
+              <th>
+                <Tooltip content={MAINTENANCE_TOOLTIPS.componentColumn.content}>
+                  <span>Component</span>
+                </Tooltip>
+              </th>
+              <th>
+                <Tooltip content={MAINTENANCE_TOOLTIPS.predictionType.content}>
+                  <span>Type</span>
+                </Tooltip>
+              </th>
+              <th>
+                <Tooltip content={MAINTENANCE_TOOLTIPS.riskLevel.content}>
+                  <span>Risk Level</span>
+                </Tooltip>
+              </th>
+              <th>
+                <Tooltip content={MAINTENANCE_TOOLTIPS.predictedDate.content}>
+                  <span>Predicted Date</span>
+                </Tooltip>
+              </th>
+              <th>
+                <Tooltip content={MAINTENANCE_TOOLTIPS.estimatedCost.content}>
+                  <span>Est. Cost</span>
+                </Tooltip>
+              </th>
+              <th>
+                <Tooltip content={MAINTENANCE_TOOLTIPS.statusColumn.content}>
+                  <span>Status</span>
+                </Tooltip>
+              </th>
             </tr>
           </thead>
           <tbody>
