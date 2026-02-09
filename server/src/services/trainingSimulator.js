@@ -1,12 +1,12 @@
 import { v4 as uuidv4 } from 'uuid';
-import db from '../utils/db.js';
+import supabase from '../utils/supabase.js';
 import { broadcast, TOPICS } from './websocket.js';
 
 // Active training sessions
 const activeSessions = new Map();
 
 /**
- * Training Simulator Service
+ * Training Simulator Service (Supabase Version)
  *
  * Simulates the federated learning workflow:
  * 1. Initialize training round
@@ -23,20 +23,32 @@ export async function startTrainingRound(roundId) {
     throw new Error('Training round is already running');
   }
 
-  const round = db.prepare(`
-    SELECT tr.*, m.name as model_name, m.architecture
-    FROM training_rounds tr
-    JOIN models m ON tr.model_id = m.id
-    WHERE tr.id = ?
-  `).get(roundId);
+  // Fetch training round with model info from Supabase
+  const { data: rounds, error: roundError } = await supabase
+    .from('training_rounds')
+    .select(`
+      *,
+      models!training_rounds_model_id_fkey (
+        name,
+        architecture
+      )
+    `)
+    .eq('id', roundId)
+    .single();
 
-  if (!round) {
+  if (roundError || !rounds) {
     throw new Error('Training round not found');
   }
 
-  const hyperparameters = JSON.parse(round.hyperparameters || '{}');
-  const privacyConfig = JSON.parse(round.privacy_config || '{}');
-  const devices = JSON.parse(round.participating_devices || '[]');
+  const round = {
+    ...rounds,
+    model_name: rounds.models?.name,
+    architecture: rounds.models?.architecture
+  };
+
+  const hyperparameters = round.hyperparameters || {};
+  const privacyConfig = round.privacy_config || {};
+  const devices = round.participating_devices || [];
 
   if (devices.length === 0) {
     throw new Error('No devices assigned to this training round');
@@ -97,7 +109,7 @@ async function runTrainingWorkflow(session) {
 
       // Update device status
       device.status = 'training';
-      updateDeviceContribution(roundId, device.id, 'training');
+      await updateDeviceContribution(roundId, device.id, 'training');
       broadcastProgress(session, `Device ${i + 1}/${devices.length} training...`);
 
       // Simulate epochs
@@ -125,7 +137,7 @@ async function runTrainingWorkflow(session) {
 
       // Device finished training
       device.status = 'uploading';
-      updateDeviceContribution(roundId, device.id, 'uploading');
+      await updateDeviceContribution(roundId, device.id, 'uploading');
       broadcastProgress(session, `Device ${i + 1}/${devices.length} uploading model...`);
 
       await simulateDelay(300);
@@ -140,7 +152,7 @@ async function runTrainingWorkflow(session) {
       const dataSamples = 500 + Math.floor(Math.random() * 1000);
       const trainingDuration = (Date.now() - session.startTime) / 1000;
 
-      updateDeviceContributionComplete(roundId, device.id, finalMetrics, dataSamples, trainingDuration);
+      await updateDeviceContributionComplete(roundId, device.id, finalMetrics, dataSamples, trainingDuration);
 
       broadcast(TOPICS.TRAINING(roundId), {
         type: 'device_completed',
@@ -152,7 +164,11 @@ async function runTrainingWorkflow(session) {
 
     // Phase 3: Aggregation
     session.status = 'aggregating';
-    db.prepare('UPDATE training_rounds SET status = "aggregating" WHERE id = ?').run(roundId);
+    await supabase
+      .from('training_rounds')
+      .update({ status: 'aggregating' })
+      .eq('id', roundId);
+
     broadcastProgress(session, 'Aggregating model updates...');
 
     await simulateDelay(1500);
@@ -164,17 +180,20 @@ async function runTrainingWorkflow(session) {
     session.status = 'completed';
 
     // Update training round
-    db.prepare(`
-      UPDATE training_rounds
-      SET status = 'completed', result_metrics = ?, completed_at = datetime('now')
-      WHERE id = ?
-    `).run(JSON.stringify(aggregatedResult.metrics), roundId);
+    await supabase
+      .from('training_rounds')
+      .update({
+        status: 'completed',
+        result_metrics: aggregatedResult.metrics,
+        completed_at: new Date().toISOString()
+      })
+      .eq('id', roundId);
 
     // Create new model version
-    const versionId = createModelVersion(session, aggregatedResult);
+    const versionId = await createModelVersion(session, aggregatedResult);
 
     // Log privacy budget
-    logPrivacyBudget(session);
+    await logPrivacyBudget(session);
 
     // Broadcast completion
     broadcast(TOPICS.TRAINING(roundId), {
@@ -306,86 +325,101 @@ function performAggregation(session) {
   };
 }
 
-function createModelVersion(session, aggregatedResult) {
-  const lastVersion = db.prepare(`
-    SELECT version FROM model_versions WHERE model_id = ? ORDER BY created_at DESC LIMIT 1
-  `).get(session.modelId);
+async function createModelVersion(session, aggregatedResult) {
+  // Get last version
+  const { data: lastVersions } = await supabase
+    .from('model_versions')
+    .select('version')
+    .eq('model_id', session.modelId)
+    .order('created_at', { ascending: false })
+    .limit(1);
 
-  const newVersion = incrementVersion(lastVersion?.version || '0.0.0');
+  const newVersion = incrementVersion(lastVersions?.[0]?.version || '0.0.0');
   const versionId = uuidv4();
 
-  db.prepare(`
-    INSERT INTO model_versions (id, model_id, version, metrics, weights, training_round_id, notes)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    versionId,
-    session.modelId,
-    newVersion,
-    JSON.stringify(aggregatedResult.metrics),
-    JSON.stringify({ aggregated: true, layers_count: aggregatedResult.model.layers.length }),
-    session.roundId,
-    `Aggregated from ${session.devices.length} devices using ${session.aggregationMethod}`
-  );
+  await supabase
+    .from('model_versions')
+    .insert({
+      id: versionId,
+      model_id: session.modelId,
+      version: newVersion,
+      metrics: aggregatedResult.metrics,
+      weights: { aggregated: true, layers_count: aggregatedResult.model.layers.length },
+      training_round_id: session.roundId,
+      notes: `Aggregated from ${session.devices.length} devices using ${session.aggregationMethod}`
+    });
 
   return versionId;
 }
 
-function logPrivacyBudget(session) {
+async function logPrivacyBudget(session) {
   const epsilon = session.privacyConfig.epsilon || 1.0;
 
   // Get cumulative epsilon for this model
-  const lastLog = db.prepare(`
-    SELECT cumulative_epsilon FROM privacy_budget_logs
-    WHERE model_id = ? ORDER BY timestamp DESC LIMIT 1
-  `).get(session.modelId);
+  const { data: lastLogs } = await supabase
+    .from('privacy_budget_logs')
+    .select('cumulative_epsilon')
+    .eq('model_id', session.modelId)
+    .order('timestamp', { ascending: false })
+    .limit(1);
 
-  const cumulativeEpsilon = (lastLog?.cumulative_epsilon || 0) + epsilon;
+  const cumulativeEpsilon = (lastLogs?.[0]?.cumulative_epsilon || 0) + epsilon;
 
-  db.prepare(`
-    INSERT INTO privacy_budget_logs (id, model_id, training_round_id, epsilon_consumed, cumulative_epsilon, budget_limit)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(
-    uuidv4(),
-    session.modelId,
-    session.roundId,
-    epsilon,
-    cumulativeEpsilon,
-    10.0 // Default budget
-  );
+  await supabase
+    .from('privacy_budget_logs')
+    .insert({
+      id: uuidv4(),
+      model_id: session.modelId,
+      training_round_id: session.roundId,
+      epsilon_consumed: epsilon,
+      cumulative_epsilon: cumulativeEpsilon,
+      budget_limit: 10.0 // Default budget
+    });
 }
 
-function updateDeviceContribution(roundId, deviceId, status) {
-  db.prepare(`
-    UPDATE device_training_contributions
-    SET status = ?
-    WHERE training_round_id = ? AND device_id = ?
-  `).run(status, roundId, deviceId);
+async function updateDeviceContribution(roundId, deviceId, status) {
+  await supabase
+    .from('device_training_contributions')
+    .update({ status })
+    .eq('training_round_id', roundId)
+    .eq('device_id', deviceId);
 }
 
-function updateDeviceContributionComplete(roundId, deviceId, metrics, samples, duration) {
-  db.prepare(`
-    UPDATE device_training_contributions
-    SET status = 'completed', local_metrics = ?, data_samples_count = ?, training_duration_seconds = ?, upload_timestamp = datetime('now')
-    WHERE training_round_id = ? AND device_id = ?
-  `).run(JSON.stringify(metrics), samples, duration, roundId, deviceId);
+async function updateDeviceContributionComplete(roundId, deviceId, metrics, samples, duration) {
+  await supabase
+    .from('device_training_contributions')
+    .update({
+      status: 'completed',
+      local_metrics: metrics,
+      data_samples_count: samples,
+      training_duration_seconds: duration,
+      upload_timestamp: new Date().toISOString()
+    })
+    .eq('training_round_id', roundId)
+    .eq('device_id', deviceId);
 }
 
-function handleTrainingError(session, error) {
+async function handleTrainingError(session, error) {
   const { roundId } = session;
 
   // Update round status
-  db.prepare(`
-    UPDATE training_rounds
-    SET status = 'failed', error_message = ?
-    WHERE id = ?
-  `).run(error.message, roundId);
+  await supabase
+    .from('training_rounds')
+    .update({
+      status: 'failed',
+      error_message: error.message
+    })
+    .eq('id', roundId);
 
   // Update device contributions
-  db.prepare(`
-    UPDATE device_training_contributions
-    SET status = 'failed', error_message = ?
-    WHERE training_round_id = ? AND status != 'completed'
-  `).run(error.message, roundId);
+  await supabase
+    .from('device_training_contributions')
+    .update({
+      status: 'failed',
+      error_message: error.message
+    })
+    .eq('training_round_id', roundId)
+    .neq('status', 'completed');
 
   // Broadcast error
   broadcast(TOPICS.TRAINING(roundId), {
@@ -463,18 +497,22 @@ export function getTrainingStatus(roundId) {
   };
 }
 
-export function cancelTrainingRound(roundId) {
+export async function cancelTrainingRound(roundId) {
   const session = activeSessions.get(roundId);
   if (session) {
     session.status = 'cancelled';
     activeSessions.delete(roundId);
 
-    db.prepare(`UPDATE training_rounds SET status = 'cancelled' WHERE id = ?`).run(roundId);
-    db.prepare(`
-      UPDATE device_training_contributions
-      SET status = 'failed'
-      WHERE training_round_id = ? AND status != 'completed'
-    `).run(roundId);
+    await supabase
+      .from('training_rounds')
+      .update({ status: 'cancelled' })
+      .eq('id', roundId);
+
+    await supabase
+      .from('device_training_contributions')
+      .update({ status: 'failed' })
+      .eq('training_round_id', roundId)
+      .neq('status', 'completed');
 
     broadcast(TOPICS.TRAINING(roundId), {
       type: 'training_cancelled',

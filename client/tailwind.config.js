@@ -8,8 +8,9 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        body: ['Inter', '-apple-system', 'sans-serif'],
-        mono: ['JetBrains Mono', 'monospace'],
+        body: ['IBM Plex Mono', 'Consolas', 'monospace'],
+        display: ['Oswald', 'Impact', 'sans-serif'],
+        mono: ['IBM Plex Mono', 'monospace'],
       },
       colors: {
         // Status colors
